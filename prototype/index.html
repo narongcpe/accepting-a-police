@@ -1,0 +1,931 @@
+<!doctype html>
+<html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<style>:root{color-scheme:light;padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom)}body{margin:0;font:14px system-ui}img{max-width:100%}[hidden]{display:none!important}</style></head><body>
+<title>ระบบรับแจ้งเหตุล่วงหน้า</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bai+Jamjuree:wght@600;700&family=IBM+Plex+Sans+Thai:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+/* Layout: app bar with mode switch; citizen side = single mobile-first column; officer side = nav rail + work area */
+:root{
+  --bg:#eef1f6; --surface:#ffffff; --surface-2:#e6ebf2; --ink:#142032; --muted:#5a6779; --line:#d3dae4;
+  --accent:#1c4d8f; --accent-ink:#ffffff; --accent-soft:#dde7f5;
+  --hi:#b8322a; --hi-soft:#f8e1de; --med:#9a6512; --med-soft:#f6ead2; --low:#27704f; --low-soft:#dcefe5;
+  --emer:#b8322a;
+  --f-display:"Bai Jamjuree","IBM Plex Sans Thai",system-ui,sans-serif;
+  --f-body:"IBM Plex Sans Thai",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+  --r:10px;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0e141d; --surface:#161f2c; --surface-2:#1d2838; --ink:#e5ebf3; --muted:#9aa6b7; --line:#2a3647;
+  --accent:#86aee8; --accent-ink:#0e141d; --accent-soft:#1d3150;
+  --hi:#f0857a; --hi-soft:#3b201e; --med:#e2b264; --med-soft:#3a2e18; --low:#6fc79f; --low-soft:#16322a; --emer:#e0574b;
+  color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0e141d; --surface:#161f2c; --surface-2:#1d2838; --ink:#e5ebf3; --muted:#9aa6b7; --line:#2a3647;
+  --accent:#86aee8; --accent-ink:#0e141d; --accent-soft:#1d3150;
+  --hi:#f0857a; --hi-soft:#3b201e; --med:#e2b264; --med-soft:#3a2e18; --low:#6fc79f; --low-soft:#16322a; --emer:#e0574b;
+  color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.6}
+h1,h2,h3{font-family:var(--f-display);line-height:1.3;text-wrap:balance;margin:0}
+h1{font-size:1.5rem} h2{font-size:1.2rem} h3{font-size:1.02rem}
+p{margin:0}
+button,input,select,textarea{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+a{color:var(--accent)}
+.mono{font-family:var(--f-mono);font-variant-numeric:tabular-nums;letter-spacing:.02em}
+.muted{color:var(--muted)}
+.small{font-size:.85rem}
+.wrap{padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+
+/* app bar */
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--surface)}
+.appbar{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--surface);border-bottom:1px solid var(--line)}
+.appbar-in{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding-block:10px;max-width:1240px;margin:0 auto}
+.brand{display:flex;align-items:center;gap:10px;min-width:0;flex:1}
+.seal{width:34px;height:34px;border-radius:8px;background:var(--accent);color:var(--accent-ink);display:grid;place-items:center;font-family:var(--f-display);font-weight:700;flex:none}
+.brand b{font-family:var(--f-display);font-size:1.05rem;display:block;line-height:1.2}
+.brand small{color:var(--muted);font-size:.78rem}
+.seg{display:inline-flex;background:var(--surface-2);border-radius:999px;padding:3px}
+.seg button{border:0;background:transparent;padding:6px 14px;border-radius:999px;cursor:pointer;font-weight:500;color:var(--muted)}
+.seg button[aria-pressed="true"]{background:var(--surface);color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.12)}
+
+/* generic */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;border:1px solid var(--line);background:var(--surface);padding:9px 16px;border-radius:8px;cursor:pointer;font-weight:500;text-decoration:none;color:var(--ink)}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn.danger{color:var(--hi);border-color:var(--hi)}
+.btn.ghost{border-color:transparent;background:transparent;color:var(--accent);padding-inline:8px}
+.btn.block{width:100%}
+.btn[disabled]{opacity:.45;cursor:not-allowed}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.stack{display:grid;gap:14px;align-content:start}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:18px}
+.field{display:grid;gap:5px}
+.field label,.lbl{font-size:.82rem;color:var(--muted);font-weight:500}
+input[type=text],input[type=tel],input[type=email],input[type=number],input[type=date],input[type=datetime-local],select,textarea{width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:8px;background:var(--surface)}
+textarea{min-height:110px;resize:vertical}
+input[readonly]{background:var(--surface-2);color:var(--muted)}
+.check{display:flex;gap:9px;align-items:flex-start;cursor:pointer}
+.check input{margin-top:5px;accent-color:var(--accent)}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+.kv{display:grid;grid-template-columns:minmax(110px,max-content) 1fr;gap:6px 16px}
+.kv dt{color:var(--muted);font-size:.85rem}
+.kv dd{margin:0;min-width:0;overflow-wrap:anywhere}
+.note{background:var(--accent-soft);border-radius:8px;padding:10px 12px;font-size:.9rem}
+.hr{height:1px;background:var(--line);border:0;margin:4px 0}
+
+/* chips */
+.lv{display:inline-flex;align-items:center;gap:6px;padding:2px 10px;border-radius:999px;font-size:.8rem;font-weight:600;white-space:nowrap}
+.lv::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}
+.lv-high{background:var(--hi-soft);color:var(--hi)} .lv-med{background:var(--med-soft);color:var(--med)} .lv-low{background:var(--low-soft);color:var(--low)}
+.st{display:inline-block;padding:2px 10px;border-radius:6px;font-size:.8rem;background:var(--surface-2);white-space:nowrap}
+.st-new{background:var(--accent-soft);color:var(--accent)} .st-closed{background:var(--low-soft);color:var(--low)}
+.st-cancelled,.st-referred{color:var(--muted)}
+.sla{font-size:.78rem;white-space:nowrap} .sla.over{color:var(--hi);font-weight:600}
+.sample{font-size:.72rem;letter-spacing:.04em;padding:1px 7px;border-radius:4px;border:1px dashed var(--line);color:var(--muted)}
+
+/* citizen */
+.cit{max-width:760px;margin:0 auto;padding-block:22px 60px}
+.stepper{display:flex;gap:4px;margin-bottom:6px}
+.stepper span{flex:1;height:4px;border-radius:2px;background:var(--surface-2)}
+.stepper span.on{background:var(--accent)}
+.catgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px}
+.cat{text-align:left;border:1px solid var(--line);background:var(--surface);padding:12px 14px;border-radius:var(--r);cursor:pointer;display:grid;gap:2px}
+.cat:hover,.cat[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-soft)}
+.cat b{font-weight:600}
+.cat span{font-size:.82rem;color:var(--muted)}
+.emer{border:2px solid var(--emer);border-radius:var(--r);padding:18px;display:grid;gap:10px}
+.emer .num{font-family:var(--f-display);font-size:2.4rem;color:var(--emer);line-height:1}
+.thaid{display:grid;gap:10px}
+.person{display:flex;gap:12px;align-items:center;text-align:left;border:1px solid var(--line);border-radius:var(--r);padding:12px;background:var(--surface);cursor:pointer;width:100%}
+.person:hover{border-color:var(--accent)}
+.avatar{width:42px;height:42px;border-radius:50%;background:var(--accent-soft);color:var(--accent);display:grid;place-items:center;font-weight:600;flex:none}
+.tracknum{font-family:var(--f-mono);font-size:1.35rem;letter-spacing:.04em}
+.ticket{display:grid;grid-template-columns:1fr auto;gap:16px;align-items:center;border:1px dashed var(--accent);border-radius:var(--r);padding:16px;background:var(--accent-soft)}
+.qr{background:#fff;padding:6px;border-radius:6px;line-height:0}
+.qr img,.qr canvas{width:112px;height:112px}
+.caselist{display:grid;gap:8px}
+.caseitem{display:grid;grid-template-columns:1fr auto;gap:4px 12px;text-align:left;border:1px solid var(--line);background:var(--surface);border-radius:var(--r);padding:12px 14px;cursor:pointer;width:100%}
+.caseitem:hover{border-color:var(--accent)}
+.timeline{list-style:none;margin:0;padding:0;display:grid;gap:0}
+.timeline li{display:grid;grid-template-columns:14px 1fr;gap:10px;padding-bottom:12px;position:relative}
+.timeline li::before{content:"";width:10px;height:10px;border-radius:50%;background:var(--accent);margin-top:7px}
+.timeline li::after{content:"";position:absolute;left:4px;top:20px;bottom:0;width:2px;background:var(--line)}
+.timeline li:last-child::after{display:none}
+.timeline li>span:empty{display:none}
+.timeline .int::before{background:var(--muted)}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:7px 12px;cursor:pointer;font-variant-numeric:tabular-nums}
+.chip[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.chip[disabled]{opacity:.4;cursor:not-allowed;text-decoration:line-through}
+
+/* map */
+.mapbox{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:14px}
+@media (max-width:720px){.mapbox{grid-template-columns:1fr}}
+svg.map{width:100%;height:auto;display:block;border-radius:var(--r);background:var(--surface-2);cursor:crosshair;border:1px solid var(--line)}
+.map .grid{stroke:var(--line);stroke-width:1}
+.map .river{fill:none;stroke:var(--accent-soft);stroke-width:14;stroke-linecap:round;stroke-linejoin:round}
+.map .rlabel{fill:var(--muted);font-size:13px}
+.map .stn{cursor:pointer}
+.map .stn circle{fill:var(--surface);stroke:var(--accent);stroke-width:3}
+.map .stn.sel circle{fill:var(--accent)}
+.map .stn text{fill:var(--ink);font-size:13px;font-weight:600;paint-order:stroke;stroke:var(--surface-2);stroke-width:4px}
+.map .me{fill:var(--hi);stroke:var(--surface);stroke-width:3}
+.map .line{stroke:var(--hi);stroke-width:2;stroke-dasharray:5 5}
+.stnlist{display:grid;gap:8px;align-content:start}
+.stnrow{border:1px solid var(--line);border-radius:var(--r);padding:10px 12px;display:grid;gap:4px;background:var(--surface)}
+.stnrow.sel{border-color:var(--accent);background:var(--accent-soft)}
+
+/* officer */
+.off{display:grid;grid-template-columns:210px minmax(0,1fr);max-width:1240px;margin:0 auto;gap:22px;padding-block:20px 60px}
+@media (max-width:860px){.off{grid-template-columns:1fr}}
+.rail{display:grid;gap:4px;align-content:start}
+@media (max-width:860px){.rail{display:flex;flex-wrap:wrap}}
+.rail button{text-align:left;border:0;background:transparent;padding:9px 12px;border-radius:8px;cursor:pointer;color:var(--muted);font-weight:500;display:flex;justify-content:space-between;gap:8px}
+.rail button[aria-current="page"]{background:var(--surface);color:var(--ink);box-shadow:inset 3px 0 0 var(--accent)}
+.rail .who{padding:10px 12px;font-size:.85rem;color:var(--muted);border-bottom:1px solid var(--line);margin-bottom:6px}
+@media (max-width:860px){.rail .who{width:100%}}
+.badge{background:var(--hi);color:var(--surface);border-radius:999px;font-size:.72rem;padding:0 7px;line-height:1.5rem}
+.summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.sum{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:12px 14px;cursor:pointer;text-align:left}
+.sum b{display:block;font-family:var(--f-display);font-size:1.7rem;line-height:1.2;font-variant-numeric:tabular-nums}
+.sum span{font-size:.82rem;color:var(--muted)}
+.sum.alert b{color:var(--hi)}
+.filters{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.tablewrap{overflow-x:auto;background:var(--surface);border:1px solid var(--line);border-radius:var(--r)}
+table{border-collapse:collapse;width:100%;font-size:.9rem}
+th,td{padding:9px 12px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:.78rem;color:var(--muted);font-weight:600;letter-spacing:.03em;background:var(--surface-2);white-space:nowrap}
+tbody tr{cursor:pointer}
+tbody tr:hover{background:var(--surface-2)}
+tr:last-child td{border-bottom:0}
+td.stripe{padding:0;width:5px}
+td.stripe i{display:block;width:5px;min-height:44px;height:100%}
+.s-high{background:var(--hi)} .s-med{background:var(--med)} .s-low{background:var(--low)}
+.num{text-align:right;font-variant-numeric:tabular-nums}
+.casegrid{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:16px;align-items:start}
+@media (max-width:980px){.casegrid{grid-template-columns:1fr}}
+.actions{display:grid;gap:14px}
+.actions .grp{display:grid;gap:8px;padding-bottom:14px;border-bottom:1px solid var(--line)}
+.actions .grp:last-child{border-bottom:0;padding-bottom:0}
+.why{margin:0;padding-left:18px;font-size:.88rem}
+.evid{display:flex;gap:8px;flex-wrap:wrap}
+.evid span{background:var(--surface-2);border-radius:6px;padding:4px 10px;font-size:.84rem}
+
+/* reports */
+.bars{display:grid;gap:7px}
+.bar{display:grid;grid-template-columns:minmax(110px,170px) 1fr 44px;gap:10px;align-items:center;font-size:.88rem}
+.bar .track{display:block;height:14px;background:var(--surface-2);border-radius:3px;overflow:hidden}
+.bar .fill{display:block;height:100%;background:var(--accent);border-radius:3px}
+.bar .num{font-variant-numeric:tabular-nums}
+.cols{display:flex;align-items:flex-end;gap:3px;height:150px;padding-top:16px;border-bottom:1px solid var(--line)}
+.cols div{flex:1;min-width:0;background:var(--accent);border-radius:3px 3px 0 0;position:relative;opacity:.85}
+.cols div:hover{opacity:1}
+.cols div[data-v]:hover::after{content:attr(data-v);position:absolute;bottom:100%;left:50%;transform:translateX(-50%);font-size:.75rem;background:var(--ink);color:var(--surface);padding:1px 6px;border-radius:4px;white-space:nowrap}
+.colx{display:flex;gap:3px;font-size:.7rem;color:var(--muted)}
+.colx span{flex:1;min-width:0;text-align:center;overflow:hidden}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.kpi{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:12px 14px}
+.kpi b{display:block;font-family:var(--f-display);font-size:1.6rem;font-variant-numeric:tabular-nums;line-height:1.25}
+.kpi span{font-size:.8rem;color:var(--muted)}
+.home{max-width:900px;margin:0 auto;padding-block:30px 60px;display:grid;gap:22px}
+.eyebrow{font-size:.78rem;letter-spacing:.08em;color:var(--accent);font-weight:600}
+.tiles{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+.tile{display:grid;gap:10px;justify-items:start;align-content:start;text-align:left;background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:22px 20px;cursor:pointer}
+.tile:hover{border-color:var(--accent)}
+@media (prefers-reduced-motion:no-preference){.tile{transition:transform .15s,border-color .15s}.tile:hover{transform:translateY(-2px)}}
+.tile .ic{width:68px;height:68px;border-radius:18px;display:grid;place-items:center;background:var(--accent-soft);color:var(--accent)}
+.tile.officer .ic{background:var(--ink);color:var(--surface)}
+.tile.nearby .ic{background:var(--hi-soft);color:var(--hi)}
+.tile .ic svg{width:40px;height:40px;fill:none;stroke:currentColor;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}
+.tile b{font-family:var(--f-display);font-size:1.25rem;line-height:1.3}
+.tile .d{font-size:.88rem;color:var(--muted)}
+@media (max-width:640px){.tiles{grid-template-columns:1fr}.tile{grid-template-columns:auto 1fr;column-gap:16px;align-items:center;padding:16px}.tile .ic{grid-row:span 2;width:60px;height:60px}}
+.tracklink{justify-self:start;border:0;background:transparent;color:var(--accent);font-weight:600;cursor:pointer;padding:4px 0}
+.nearest{display:grid;gap:10px;border:2px solid var(--accent);border-radius:16px;padding:18px;background:var(--surface)}
+.nearest .big{font-family:var(--f-display);font-size:1.6rem;line-height:1.2}
+.map .acc{fill:var(--hi);opacity:.15}
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--surface);padding:10px 18px;border-radius:8px;z-index:20;font-size:.9rem;max-width:calc(100% - 32px)}
+@media (prefers-reduced-motion:no-preference){.fade{animation:fade .18s ease-out}@keyframes fade{from{opacity:.4;transform:translateY(3px)}to{opacity:1;transform:none}}}
+</style>
+
+<header class="appbar">
+  <div class="appbar-in wrap">
+    <div class="brand" data-act="mode" data-v="home" style="cursor:pointer">
+      <div class="seal" aria-hidden="true">รจ</div>
+      <div><b>ระบบรับแจ้งเหตุล่วงหน้า</b><small>ต้นแบบเฟส 1 · ตัวอย่างจังหวัดเชียงใหม่ · ThaID จำลอง · ข้อมูลตัวอย่าง</small></div>
+    </div>
+    <button id="m-home" class="btn" data-act="mode" data-v="home" hidden><svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true" fill="currentColor"><rect x="2" y="2" width="7" height="7" rx="1.5"/><rect x="11" y="2" width="7" height="7" rx="1.5"/><rect x="2" y="11" width="7" height="7" rx="1.5"/><rect x="11" y="11" width="7" height="7" rx="1.5"/></svg>เมนูหลัก</button>
+  </div>
+</header>
+<main id="app" class="wrap"></main>
+<div id="toast" class="toast" hidden></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script>
+/* ============ helpers ============ */
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const pad=n=>String(n).padStart(2,'0');
+const TH_M=['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+const TH_MF=['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
+const TH_D=['อา.','จ.','อ.','พ.','พฤ.','ศ.','ส.'];
+const fd=d=>{d=new Date(d);return `${d.getDate()} ${TH_M[d.getMonth()]} ${d.getFullYear()+543}`};
+const ft=d=>{d=new Date(d);return `${pad(d.getHours())}:${pad(d.getMinutes())}`};
+const fdt=d=>`${fd(d)} ${ft(d)} น.`;
+const dkey=d=>{d=new Date(d);return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`};
+const fromKey=k=>{const[y,m,d]=k.split('-').map(Number);return new Date(y,m-1,d)};
+const fpid=p=>`${p[0]}-${p.slice(1,5)}-${p.slice(5,10)}-${p.slice(10,12)}-${p[12]}`;
+const mpid=p=>`${p[0]}-xxxx-xxxxx-${p.slice(10,12)}-${p[12]}`;
+const money=n=>Number(n||0).toLocaleString('th-TH');
+const H=3600e3, D=24*H;
+function toast(msg){const t=$('#toast');t.textContent=msg;t.hidden=false;clearTimeout(toast.t);toast.t=setTimeout(()=>t.hidden=true,2600)}
+
+/* ============ reference data ============ */
+const CATS={
+  assault:{name:'ทำร้ายร่างกาย',hint:'ถูกทำร้าย ชกต่อย หรือใช้อาวุธ',base:'high'},
+  domestic:{name:'ความรุนแรงในครอบครัว',hint:'ถูกทำร้ายหรือคุกคามโดยคนในครอบครัว',base:'high'},
+  burglary:{name:'บุกรุก งัดบ้าน',hint:'บ้าน ร้านค้า หรือที่พักถูกงัด',base:'high'},
+  threat:{name:'ข่มขู่ คุกคาม',hint:'ถูกขู่ทำร้าย ติดตาม หรือสะกดรอย',base:'med'},
+  theft:{name:'ลักทรัพย์ วิ่งราว',hint:'กระเป๋า โทรศัพท์ หรือรถถูกขโมย',base:'med'},
+  fraud:{name:'ฉ้อโกง',hint:'ถูกหลอกให้จ่ายเงินหรือส่งมอบทรัพย์สิน',base:'med'},
+  online:{name:'ฉ้อโกงทางออนไลน์',hint:'ถูกหลอกโอนเงิน ซื้อของออนไลน์',base:'med'},
+  traffic:{name:'อุบัติเหตุจราจร',hint:'รถชน เฉี่ยวชน ที่ต้องมีบันทึกตำรวจ',base:'low'},
+  lost:{name:'เอกสาร/ทรัพย์สินหาย',hint:'บัตรประชาชน ใบขับขี่ สมุดบัญชีหาย',base:'low'},
+  other:{name:'เรื่องอื่น ๆ',hint:'เรื่องที่ไม่อยู่ในหมวดข้างต้น',base:'low'}
+};
+const LV={high:{name:'สูง',sla:24,win:[0,2]},med:{name:'ปานกลาง',sla:72,win:[1,5]},low:{name:'ต่ำ',sla:168,win:[2,10]}};
+const LV_ORDER={high:0,med:1,low:2};
+const ST={new:'รอรับเรื่อง',accepted:'รับเรื่องแล้ว',assigned:'มอบหมาย พงส. แล้ว',met:'ผู้แจ้งมาพบแล้ว',investigating:'อยู่ระหว่างสอบสวน',closed:'ปิดเรื่อง',referred:'ส่งต่อหน่วยงานอื่น',cancelled:'ยกเลิก'};
+const OPEN=['new','accepted','assigned','met','investigating'];
+const DONE=['closed','referred','cancelled'];
+const CLOSE_REASONS=['ส่งสำนวนดำเนินคดี','ไกล่เกลี่ย/ยอมความ','ลงบันทึกประจำวันเป็นหลักฐาน','ไม่เป็นความผิดทางอาญา','ผู้แจ้งขอถอนเรื่อง'];
+const SLOTS=['09:00','10:00','11:00','13:00','14:00','15:00','16:00'];
+const STATIONS=[
+  {id:'s1',code:'5001',name:'สภ.เมืองเชียงใหม่',area:'อ.เมืองเชียงใหม่',lat:18.7893,lng:98.9850,lab:'l'},
+  {id:'s2',code:'5002',name:'สภ.ภูพิงคราชนิเวศน์',area:'อ.เมืองเชียงใหม่',lat:18.8000,lng:98.9560},
+  {id:'s3',code:'5003',name:'สภ.ช้างเผือก',area:'อ.เมืองเชียงใหม่',lat:18.8090,lng:98.9860},
+  {id:'s4',code:'5004',name:'สภ.แม่ปิง',area:'อ.เมืองเชียงใหม่',lat:18.7870,lng:99.0040},
+  {id:'s5',code:'5005',name:'สภ.หนองหอย',area:'อ.เมืองเชียงใหม่',lat:18.7560,lng:99.0080},
+  {id:'s6',code:'5006',name:'สภ.สันทราย',area:'อ.สันทราย',lat:18.8500,lng:99.0430},
+  {id:'s7',code:'5007',name:'สภ.แม่ริม',area:'อ.แม่ริม',lat:18.9100,lng:98.9450},
+  {id:'s8',code:'5008',name:'สภ.หางดง',area:'อ.หางดง',lat:18.6900,lng:98.9230},
+  {id:'s9',code:'5009',name:'สภ.สารภี',area:'อ.สารภี',lat:18.7110,lng:99.0360},
+  {id:'s10',code:'5010',name:'สภ.สันกำแพง',area:'อ.สันกำแพง',lat:18.7450,lng:99.1200}
+];
+const stn=id=>STATIONS.find(s=>s.id===id)||{name:'-',code:'0000'};
+const OFFICERS=[
+  {id:'o1',name:'ร.ต.อ.ธนกร ศรีวงศ์',role:'duty',roleName:'ร้อยเวร'},
+  {id:'o2',name:'พ.ต.ท.หญิง สุภาวดี แก้วมณี',role:'inv',roleName:'พนักงานสอบสวน'},
+  {id:'o3',name:'ร.ต.อ.วีรยุทธ ใจดี',role:'inv',roleName:'พนักงานสอบสวน'},
+  {id:'o4',name:'พ.ต.ท.ประภาส อินทร์แก้ว',role:'inv',roleName:'พนักงานสอบสวน'},
+  {id:'o5',name:'พ.ต.อ.ชาญชัย บุญมา',role:'sup',roleName:'หัวหน้างานสอบสวน'}
+];
+const off=id=>OFFICERS.find(o=>o.id===id);
+const INV=OFFICERS.filter(o=>o.role==='inv');
+/* ThaID test identities: fictional people, not real data */
+const THAID=[
+  {pid:'3100700123457',prefix:'นาย',first:'สมชาย',last:'ใจงาม',birth:'1988-04-12',addr:'99/1 ถ.ท่าแพ ต.ช้างคลาน อ.เมืองเชียงใหม่ จ.เชียงใหม่ 50100'},
+  {pid:'1101800456781',prefix:'นางสาว',first:'กมลวรรณ',last:'ศรีสุข',birth:'1996-09-03',addr:'45 ถ.นิมมานเหมินท์ ซ.9 ต.สุเทพ อ.เมืองเชียงใหม่ จ.เชียงใหม่ 50200'},
+  {pid:'3401200789012',prefix:'นาย',first:'อนุชา',last:'พรหมมา',birth:'1979-01-25',addr:'12/8 ม.3 ต.สันทรายน้อย อ.สันทราย จ.เชียงใหม่ 50210'}
+];
+
+/* ============ triage ============ */
+function triage(c){
+  const cat=CATS[c.category]; let lv=cat.base;
+  const why=[`ประเภท "${cat.name}" มีระดับตั้งต้น${LV[lv].name}`];
+  if(c.injured&&lv!=='high'){lv='high';why.push('มีผู้บาดเจ็บ จึงปรับเป็นระดับสูง')}
+  else if(c.injured) why.push('มีผู้บาดเจ็บ');
+  if(c.weapon&&lv!=='high'){lv='high';why.push('มีการใช้หรือขู่ด้วยอาวุธ จึงปรับเป็นระดับสูง')}
+  else if(c.weapon) why.push('มีการใช้หรือขู่ด้วยอาวุธ');
+  if(Number(c.damage)>=100000&&lv!=='high'){lv=lv==='low'?'med':'high';why.push('ความเสียหายตั้งแต่ 100,000 บาท จึงปรับขึ้น 1 ระดับ')}
+  return {level:lv,why};
+}
+
+/* ============ storage ============ */
+const LS_KEY='rp-proto-cm-v1';
+function load(){try{const s=localStorage.getItem(LS_KEY);if(s)return JSON.parse(s)}catch(e){}return null}
+function save(){try{localStorage.setItem(LS_KEY,JSON.stringify(DB))}catch(e){}}
+
+function rng(seed){return()=>{seed=(seed*1664525+1013904223)%4294967296;return seed/4294967296}}
+function trackingFor(c,db){
+  const d=new Date(c.createdAt), s=stn(c.stationId);
+  const ym=`${String(d.getFullYear()+543).slice(2)}${pad(d.getMonth()+1)}`;
+  const key=`${s.code}-${ym}`; db.seq[key]=(db.seq[key]||0)+1;
+  return `RP-${s.code}-${ym}-${String(db.seq[key]).padStart(5,'0')}`;
+}
+function seed(){
+  const r=rng(20261102), pick=a=>a[Math.floor(r()*a.length)], now=Date.now();
+  const FN=['สมศักดิ์','วิภา','ณัฐพล','อรุณี','ปิยะ','ศิริพร','กิตติ','มาลัย','ธีรวัฒน์','จันทร์เพ็ญ','อภิชาติ','พรทิพย์','วรเชษฐ์','นงลักษณ์'];
+  const LN=['รุ่งเรือง','มีสุข','ทองดี','แสงทอง','บุญส่ง','ศรีประเสริฐ','พูลผล','วงศ์ใหญ่','ชัยมงคล','สุขสวัสดิ์'];
+  const W=[['theft',20],['lost',16],['fraud',13],['online',12],['traffic',10],['assault',9],['burglary',6],['threat',6],['domestic',4],['other',4]];
+  const wsum=W.reduce((a,b)=>a+b[1],0);
+  const wpick=()=>{let x=r()*wsum;for(const[k,w]of W){if((x-=w)<0)return k}return'other'};
+  const DESC={
+    theft:['กระเป๋าสตางค์ถูกล้วงขณะเดินในถนนคนเดินวันอาทิตย์ มีบัตรและเงินสดอยู่ข้างใน','รถจักรยานยนต์ที่จอดหน้าคอนโดหายไปช่วงกลางคืน','โทรศัพท์มือถือถูกกระชากขณะเดินริมถนน'],
+    lost:['บัตรประชาชนหายระหว่างเดินทาง ต้องการหลักฐานเพื่อทำบัตรใหม่','ใบขับขี่และสมุดบัญชีธนาคารหายพร้อมกระเป๋า','หนังสือเดินทางหายบนรถแดง'],
+    fraud:['จ่ายเงินมัดจำเช่าห้องแล้วติดต่อผู้ให้เช่าไม่ได้','ถูกหลอกลงทุนโดยคนรู้จัก โอนเงินไปหลายครั้ง'],
+    online:['สั่งซื้อสินค้าทางเพจเฟซบุ๊กแล้วไม่ได้รับของ','ถูกหลอกให้โอนเงินโดยอ้างเป็นเจ้าหน้าที่ธนาคาร'],
+    traffic:['รถยนต์ถูกเฉี่ยวชนบริเวณสี่แยก คู่กรณีขับหนี','รถจักรยานยนต์ชนท้ายรถยนต์ ต้องการบันทึกเพื่อเคลมประกัน'],
+    assault:['ถูกทำร้ายร่างกายหน้าร้านอาหารหลังมีปากเสียงกัน','ถูกกลุ่มวัยรุ่นรุมทำร้ายบริเวณป้ายรถเมล์'],
+    burglary:['บ้านถูกงัดประตูหลังขณะไม่อยู่ ทรัพย์สินหายหลายรายการ','ร้านค้าถูกงัดกุญแจช่วงกลางดึก'],
+    threat:['ถูกอดีตแฟนส่งข้อความข่มขู่และมาดักรอหน้าที่ทำงาน','เพื่อนบ้านขู่ว่าจะทำร้ายหลังมีข้อพิพาทเรื่องที่จอดรถ'],
+    domestic:['ถูกสามีทำร้ายร่างกายเป็นประจำ ต้องการความช่วยเหลือ','บุตรชายใช้กำลังข่มขู่บิดามารดาเพื่อเอาเงิน'],
+    other:['พบบุคคลต้องสงสัยเดินวนในหมู่บ้านหลายวัน','มีการลักลอบทิ้งขยะในที่ดินของผู้แจ้ง']
+  };
+  const db={cases:[],citizens:{},seq:{},v:1};
+  const duty=OFFICERS[0];
+  function make(o){
+    const tri=triage(o); const lv=o.levelOverride||tri.level;
+    const c={id:'c'+Math.floor(r()*1e9).toString(36)+db.cases.length,createdAt:o.created,reporter:o.reporter,category:o.category,
+      desc:o.desc,place:o.place,incidentAt:o.created-Math.floor(r()*30)*H,damage:o.damage||0,injured:!!o.injured,weapon:!!o.weapon,suspectKnown:r()<.3,
+      files:o.files||[],stationId:o.stationId,level:lv,levelAuto:tri.level,why:tri.why,status:'new',assignee:null,appt:null,acceptedAt:null,closedAt:null,closeReason:null,
+      history:[{at:o.created,by:'ผู้แจ้ง',act:'ยื่นเรื่องผ่านระบบ',pub:1},{at:o.created+60e3,by:'ระบบ',act:`คัดกรองอัตโนมัติ: ระดับ${LV[tri.level].name}`,pub:1}],sample:true};
+    return c;
+  }
+  for(let i=0;i<150;i++){
+    const days=Math.floor(Math.pow(r(),1.35)*430);
+    let created=new Date(now-days*D);created.setHours(7+Math.floor(r()*14),Math.floor(r()*60),0,0);
+    created=+created; if(created>now) created=now-Math.floor(r()*5*H)-10*60e3;
+    const cat=wpick();
+    const injured=['assault','domestic','traffic'].includes(cat)&&r()<.45;
+    const weapon=['assault','threat','burglary'].includes(cat)&&r()<.25;
+    const damage=['theft','fraud','online','burglary'].includes(cat)?Math.round(r()*r()*250000/100)*100:0;
+    const reporter={pid:String(1e12+Math.floor(r()*8.99e12)).slice(0,13),prefix:pick(['นาย','นาง','นางสาว']),first:pick(FN),last:pick(LN),phone:'08'+String(Math.floor(r()*1e8)).padStart(8,'0'),email:''};
+    const c=make({created,category:cat,injured,weapon,damage,reporter,desc:pick(DESC[cat]),place:'ในพื้นที่รับผิดชอบ (ข้อมูลตัวอย่าง)',stationId:pick(STATIONS).id,files:r()<.5?['หลักฐาน_'+(i+1)+'.jpg']:[]});
+    const age=(now-created)/D, lv=c.level, sla=LV[lv].sla;
+    const accH=r()<.85?r()*sla*.8:sla*(1+r());
+    if(age*24>accH && !(age<1&&r()<.5)){c.acceptedAt=created+accH*H;c.status='accepted';c.history.push({at:c.acceptedAt,by:duty.name,act:'รับเรื่อง',pub:1})}
+    let apptAt=null;
+    if(c.acceptedAt&&age>1.2){
+      const o=pick(INV);c.assignee=o.id;c.status='assigned';
+      c.history.push({at:c.acceptedAt+2*H,by:duty.name,act:`มอบหมายให้ ${o.name}`,pub:1});
+      const ad=new Date(created+({high:1,med:3,low:6})[lv]*D);if(ad.getDay()===0)ad.setDate(ad.getDate()+1);
+      const slot=pick(SLOTS);c.appt={date:dkey(ad),slot,confirmed:true};
+      apptAt=+fromKey(c.appt.date)+parseInt(slot)*H;
+      c.history.push({at:c.acceptedAt+3*H,by:o.name,act:`ยืนยันนัดหมาย ${fd(ad)} เวลา ${slot} น.`,pub:1});
+      if(apptAt<now){
+        if(r()<.88){c.status='met';c.history.push({at:apptAt,by:o.name,act:'ผู้แจ้งมาพบตามนัด และลงบันทึกประจำวันแล้ว',pub:1})}
+        else{c.appt.noShow=true;c.history.push({at:apptAt+8*H,by:o.name,act:'ผู้แจ้งไม่มาตามนัด',pub:1})}
+      }
+    }
+    if(c.status==='met'&&age>6){c.status='investigating';c.history.push({at:apptAt+D,by:off(c.assignee).name,act:'เริ่มการสอบสวน',pub:1})}
+    if(['met','investigating','assigned'].includes(c.status)&&age>8&&r()<Math.min(.93,age/35)){
+      let t=(apptAt||created)+(2+r()*Math.min(45,age-6))*D; if(t>now) t=now-r()*D;
+      const x=r(); c.closedAt=t;
+      if(x<.07){c.status='referred';c.closeReason='ส่งต่อหน่วยงานอื่น';c.history.push({at:t,by:off(c.assignee).name,act:'ส่งต่อ บก.สอท. (คดีออนไลน์)',pub:1})}
+      else if(x<.12){c.status='cancelled';c.closeReason='ผู้แจ้งขอถอนเรื่อง';c.history.push({at:t,by:off(c.assignee).name,act:'ยกเลิกตามคำขอของผู้แจ้ง',pub:1})}
+      else{c.status='closed';c.closeReason=c.category==='lost'?'ลงบันทึกประจำวันเป็นหลักฐาน':pick(CLOSE_REASONS.slice(0,4));c.history.push({at:t,by:off(c.assignee).name,act:`ปิดเรื่อง: ${c.closeReason}`,pub:1})}
+    }
+    db.cases.push(c);
+  }
+  /* two cases that belong to the first ThaID test identity */
+  const p=THAID[0], me={pid:p.pid,prefix:p.prefix,first:p.first,last:p.last,phone:'0812345678',email:''};
+  const old=db.cases.filter(c=>c.status==='closed'&&c.category==='lost')[0];
+  if(old){old.reporter=me}
+  const t0=now-1.4*D; const fresh=make({created:t0,category:'theft',damage:18500,reporter:me,desc:'โทรศัพท์มือถือถูกขโมยจากกระเป๋าขณะเลือกซื้อของในไนท์บาซาร์ มีภาพจากกล้องวงจรปิดของร้าน',place:'ไนท์บาซาร์ ถ.ช้างคลาน',stationId:'s4',files:['ใบเสร็จโทรศัพท์.pdf','ภาพจากกล้องร้าน.jpg']});
+  fresh.acceptedAt=t0+3*H;fresh.status='assigned';fresh.assignee='o2';
+  const ad=new Date(now+1.5*D);if(ad.getDay()===0)ad.setDate(ad.getDate()+1);
+  fresh.appt={date:dkey(ad),slot:'10:00',confirmed:true};
+  fresh.history.push({at:fresh.acceptedAt,by:duty.name,act:'รับเรื่อง',pub:1},{at:fresh.acceptedAt+H,by:duty.name,act:`มอบหมายให้ ${off('o2').name}`,pub:1},{at:fresh.acceptedAt+2*H,by:off('o2').name,act:`ยืนยันนัดหมาย ${fd(ad)} เวลา 10:00 น.`,pub:1},{at:fresh.acceptedAt+2*H+60e3,by:off('o2').name,act:'กรุณานำใบเสร็จและกล่องโทรศัพท์ (ถ้ามี) มาในวันนัด',pub:1});
+  db.cases.push(fresh);
+  db.citizens[p.pid]={...me};
+  db.cases.sort((a,b)=>a.createdAt-b.createdAt);
+  db.cases.forEach(c=>c.tracking=trackingFor(c,db));
+  return db;
+}
+let DB=load()||seed(); save();
+
+/* ============ state ============ */
+const S={
+  mode:'home',
+  c:{view:'login',pid:null,otp:null,caseId:null,wiz:null,me:{lat:18.7877,lng:98.9934,label:'ประตูท่าแพ'},trackQ:'',trackRes:null,profile:null},
+  o:{view:'login',id:null,caseId:null,f:{status:'open',level:'all',station:'all',q:''},rep:{type:'monthly',day:dkey(Date.now()),m:new Date().getMonth(),y:new Date().getFullYear()},showPid:false,csv:null}
+};
+function go(){render();window.scrollTo({top:0})}
+
+/* ============ map ============ */
+const B={lat0:18.67,lat1:18.93,lng0:98.89,lng1:99.14,w:600,h:660};
+const px=p=>[(p.lng-B.lng0)/(B.lng1-B.lng0)*B.w,(B.lat1-p.lat)/(B.lat1-B.lat0)*B.h];
+const unpx=(x,y)=>({lng:B.lng0+x/B.w*(B.lng1-B.lng0),lat:B.lat1-y/B.h*(B.lat1-B.lat0)});
+function km(a,b){const R=6371,t=x=>x*Math.PI/180,dl=t(b.lat-a.lat),dn=t(b.lng-a.lng);const h=Math.sin(dl/2)**2+Math.cos(t(a.lat))*Math.cos(t(b.lat))*Math.sin(dn/2)**2;return 2*R*Math.asin(Math.sqrt(h))}
+const RIVER=[[98.968,18.93],[98.980,18.89],[98.992,18.86],[99.000,18.83],[99.003,18.80],[99.002,18.785],[99.000,18.77],[99.005,18.755],[99.012,18.735],[99.020,18.71],[99.026,18.67]];
+const PRESETS=[{label:'ประตูท่าแพ',lat:18.7877,lng:98.9934},{label:'นิมมานเหมินท์',lat:18.7990,lng:98.9680},{label:'ไนท์บาซาร์',lat:18.7855,lng:99.0010},{label:'สนามบินเชียงใหม่',lat:18.7680,lng:98.9640},{label:'เซ็นทรัลเฟสติวัล',lat:18.8080,lng:99.0180}];
+function mapSvg(me,selId){
+  let g='';for(let i=1;i<7;i++){g+=`<line class="grid" x1="${i*100}" y1="0" x2="${i*100}" y2="${B.h}"/><line class="grid" x1="0" y1="${i*100}" x2="${B.w}" y2="${i*100}"/>`}
+  const river=RIVER.map(([lng,lat])=>px({lat,lng}).map(v=>v.toFixed(1)).join(',')).join(' ');
+  const [mx,my]=px(me);
+  const inB=me.lat>B.lat0&&me.lat<B.lat1&&me.lng>B.lng0&&me.lng<B.lng1;
+  const accPx=me.acc?Math.min(90,Math.max(10,me.acc/1000/((B.lat1-B.lat0)*111)*B.h)):0;
+  const sorted=STATIONS.map(s=>({s,d:km(me,s)})).sort((a,b)=>a.d-b.d);
+  const near=sorted[0].s; const target=selId?stn(selId):near; const [tx,ty]=px(target);
+  const st=STATIONS.map(s=>{const[x,y]=px(s);const L=x>480||s.lab==='l';const anchor=L?'end':'start';const dx=L?-12:12;return `<g class="stn${s.id===selId?' sel':''}" data-act="pickstn" data-id="${s.id}" role="button" aria-label="${esc(s.name)}"><circle cx="${x}" cy="${y}" r="9"/><text x="${x+dx}" y="${y+5}" text-anchor="${anchor}">${esc(s.name)}</text></g>`}).join('');
+  return `<svg class="map" viewBox="0 0 ${B.w} ${B.h}" role="img" aria-label="แผนผังโรงพัก คลิกเพื่อกำหนดตำแหน่งของคุณ">
+    ${g}<polyline class="river" points="${river}"/><text class="rlabel" x="${px({lat:18.735,lng:99.012}).join('" y="')}" dx="12">แม่น้ำปิง</text>
+    ${(()=>{const[a,b]=px({lat:18.795,lng:98.982}),[c,d]=px({lat:18.782,lng:98.995});return `<rect x="${a}" y="${b}" width="${c-a}" height="${d-b}" fill="none" stroke="var(--muted)" stroke-width="2" stroke-dasharray="3 3"/><text class="rlabel" x="${a}" y="${d+16}">คูเมือง</text>`})()}
+    <text class="rlabel" x="${px({lat:18.815,lng:98.893}).join('" y="')}">← ดอยสุเทพ</text>
+    ${inB?`<line class="line" x1="${mx}" y1="${my}" x2="${tx}" y2="${ty}"/>`:''}
+    ${st}${inB?`${accPx?`<circle class="acc" cx="${mx}" cy="${my}" r="${accPx}"/>`:''}<circle class="me" cx="${mx}" cy="${my}" r="8"/>`:''}
+  </svg>`;
+}
+function stationPicker(selId,forWizard){
+  const me=S.c.me;
+  const outside=!(me.lat>B.lat0&&me.lat<B.lat1&&me.lng>B.lng0&&me.lng<B.lng1);
+  const sorted=STATIONS.map(s=>({s,d:km(me,s)})).sort((a,b)=>a.d-b.d);
+  return `<div class="stack">
+    <div class="row"><button class="btn primary" data-act="gps" ${GPS.busy?'disabled':''}>${GPS.busy?'กำลังหาตำแหน่ง…':'ใช้ตำแหน่งจากมือถือ (GPS)'}</button><span class="small"><span class="muted">ตำแหน่งที่ใช้:</span> <b>${esc(me.label)}</b></span></div>
+    ${GPS.err?`<div class="note small">${GPS.err}</div>`:''}
+    ${outside?`<div class="note small">ตำแหน่งของคุณอยู่นอกพื้นที่ตัวอย่างจังหวัดเชียงใหม่ จึงไม่แสดงจุดบนแผนผัง ระยะทางด้านล่างคำนวณจากตำแหน่งจริงของคุณ</div>`:''}
+    <div class="row small"><span class="muted">หรือแตะบนแผนผัง / เลือกจุด:</span>
+      ${PRESETS.map(p=>`<button class="chip" data-act="preset" data-l="${esc(p.label)}" aria-pressed="${p.label===me.label}">${esc(p.label)}</button>`).join('')}</div>
+    <div class="mapbox">
+      <div>${mapSvg(me,selId)}<p class="small muted" style="margin-top:6px">แผนผังพิกัดโดยประมาณสำหรับต้นแบบ ระบบจริงจะใช้ Longdo Map หรือ Google Maps และ GPS ของเครื่อง</p></div>
+      <div class="stnlist">${sorted.map(({s,d},i)=>`<div class="stnrow${s.id===selId?' sel':''}">
+        <div class="row" style="justify-content:space-between"><b>${esc(s.name)}</b><span class="mono small">${d.toFixed(1)} กม.</span></div>
+        <span class="small muted">${esc(s.area)}${i===0?' · ใกล้ที่สุด':''}</span>
+        <div class="row">${forWizard?`<button class="btn ${s.id===selId?'primary':''}" data-act="pickstn" data-id="${s.id}">${s.id===selId?'เลือกแล้ว':'เลือกโรงพักนี้'}</button>`:''}
+        <a class="btn ghost" href="https://www.google.com/maps/dir/?api=1&destination=${s.lat},${s.lng}" target="_blank" rel="noopener">นำทาง ↗</a></div>
+      </div>`).join('')}</div>
+    </div></div>`;
+}
+
+/* ============ citizen views ============ */
+function cLogin(){
+  return `<div class="cit stack fade">
+    <div class="stack" style="gap:6px"><h1>แจ้งเรื่องล่วงหน้า แล้วนัดพบพนักงานสอบสวน</h1>
+    <p class="muted">กรอกรายละเอียดก่อนไปโรงพัก ระบบจะคัดกรองความเร่งด่วน ออกเลขติดตามเรื่อง และจองเวลานัดให้</p></div>
+    <div class="panel thaid">
+      <h2>เข้าสู่ระบบด้วย ThaID</h2>
+      <p class="small muted">ในระบบจริงจะเปิดแอป ThaID ให้สแกนยืนยันตัวตน แล้วส่งชื่อ นามสกุล และเลขบัตรประชาชนกลับมา ในต้นแบบนี้ให้เลือกบุคคลทดสอบแทน</p>
+      ${THAID.map((p,i)=>`<button class="person" data-act="thaid" data-i="${i}"><span class="avatar">${esc(p.first[0])}</span><span><b>${esc(p.prefix+p.first+' '+p.last)}</b><br><span class="small muted mono">${mpid(p.pid)}</span></span></button>`).join('')}
+      <span class="sample" style="justify-self:start">บุคคลสมมติสำหรับทดสอบ</span>
+    </div>
+    <div class="panel stack">
+      <h2>ตรวจสอบสถานะด้วยเลขติดตาม</h2>
+      <div class="row"><input id="trackq" type="text" placeholder="เช่น ${esc(DB.cases[DB.cases.length-1].tracking)}" value="${esc(S.c.trackQ)}" style="flex:1;min-width:200px"><button class="btn" data-act="track">ตรวจสอบ</button></div>
+      ${S.c.trackRes===false?`<p class="small" style="color:var(--hi)">ไม่พบเลขติดตามนี้ ตรวจสอบตัวอักษรและตัวเลขอีกครั้ง</p>`:''}
+      ${S.c.trackRes?trackCard(S.c.trackRes):''}
+    </div>
+  </div>`;
+}
+function trackCard(c){
+  return `<div class="stack" style="gap:8px"><div class="row"><span class="mono">${esc(c.tracking)}</span><span class="st st-${c.status}">${ST[c.status]}</span></div>
+  <p class="small">${esc(CATS[c.category].name)} · ${esc(stn(c.stationId).name)} · ยื่นเมื่อ ${fd(c.createdAt)}</p>
+  ${c.appt?`<p class="small">นัดหมาย: ${fd(fromKey(c.appt.date))} เวลา ${c.appt.slot} น. ${c.appt.confirmed?'(ยืนยันแล้ว)':'(รอยืนยัน)'}</p>`:''}
+  <p class="small muted">เข้าสู่ระบบด้วย ThaID เพื่อดูรายละเอียดทั้งหมด</p></div>`;
+}
+function cProfile(){
+  const p=S.c.profile, saved=DB.citizens[p.pid]||{};
+  return `<div class="cit stack fade">
+    ${saved.phone?`<button class="btn ghost" data-act="cview" data-v="home" style="justify-self:start">← กลับหน้าประชาชน</button>`:''}
+    <div><h1>ข้อมูลผู้แจ้ง</h1><p class="muted">${saved.phone?'ข้อมูลจาก ThaID แก้ไขไม่ได้ แก้อีเมลและที่อยู่ติดต่อได้ทันที ถ้าเปลี่ยนเบอร์โทรจะต้องยืนยัน OTP ใหม่':'ข้อมูลจาก ThaID แก้ไขไม่ได้ กรุณาเพิ่มเบอร์โทรเพื่อรับการแจ้งเตือนและยืนยันนัด'}</p></div>
+    <form class="panel stack" id="profileForm">
+      <div class="grid2">
+        <div class="field"><label>ชื่อ-นามสกุล (จาก ThaID)</label><input id="pf-name" type="text" readonly value="${esc(p.prefix+p.first+' '+p.last)}"></div>
+        <div class="field"><label>เลขประจำตัวประชาชน (จาก ThaID)</label><input id="pf-pid" type="text" readonly class="mono" value="${fpid(p.pid)}"></div>
+        <div class="field"><label>วันเกิด (จาก ThaID)</label><input id="pf-birth" type="text" readonly value="${fd(fromKey(p.birth))}"></div>
+        <div class="field"><label>ที่อยู่ตามทะเบียนบ้าน (จาก ThaID)</label><input id="pf-addr" type="text" readonly value="${esc(p.addr)}"></div>
+      </div>
+      <hr class="hr">
+      <div class="grid2">
+        <div class="field"><label for="pf-phone">เบอร์โทรศัพท์มือถือ * ${saved.phone?'<span class="st st-closed">ยืนยันแล้ว</span>':''}</label><input id="pf-phone" type="tel" inputmode="numeric" maxlength="10" placeholder="08xxxxxxxx" value="${esc(saved.phone||'')}"></div>
+        <div class="field"><label for="pf-email">อีเมล (ไม่บังคับ)</label><input id="pf-email" type="email" value="${esc(saved.email||'')}"></div>
+        <div class="field"><label for="pf-contact">ที่อยู่ปัจจุบันที่ติดต่อได้ (ถ้าต่างจากทะเบียนบ้าน)</label><input id="pf-contact" type="text" value="${esc(saved.contact||'')}"></div>
+      </div>
+      ${S.c.otp?`<div class="note stack" style="gap:8px"><span>ส่งรหัส OTP ไปที่ ${esc(S.c.otp.phone)} แล้ว <span class="muted">(ต้นแบบ: ใช้รหัส <b class="mono">123456</b>)</span></span>
+        <div class="row"><input id="pf-otp" type="text" inputmode="numeric" maxlength="6" placeholder="รหัส 6 หลัก" style="max-width:180px"><button class="btn primary" type="button" data-act="otpverify">ยืนยัน OTP</button></div></div>`
+      :(saved.phone?`<div class="row"><button class="btn primary" type="button" data-act="profilesave">บันทึก</button><button class="btn" type="button" data-act="cview" data-v="home">ยกเลิก</button></div>`:`<div class="row"><button class="btn primary" type="button" data-act="otpsend">ส่งรหัส OTP</button></div>`)}
+    </form></div>`;
+}
+function cHome(){
+  const me=DB.citizens[S.c.pid];
+  const mine=DB.cases.filter(c=>c.reporter.pid===S.c.pid).sort((a,b)=>b.createdAt-a.createdAt);
+  return `<div class="cit stack fade">
+    <div class="row" style="justify-content:space-between"><div><p class="muted small">สวัสดี</p><h1>${esc(me.prefix+me.first+' '+me.last)}</h1></div>
+      <div class="row"><button class="btn" data-act="cview" data-v="profile">ข้อมูลผู้แจ้ง</button><button class="btn ghost" data-act="clogout">ออกจากระบบ</button></div></div>
+    <button class="btn primary block" data-act="newcase" style="padding:14px;font-size:1.05rem">+ แจ้งเรื่องใหม่</button>
+    <div class="emer" style="border-width:1px;grid-template-columns:auto 1fr;align-items:center"><span class="num" style="font-size:1.6rem">191</span><span class="small">ถ้ามีเหตุร้ายกำลังเกิดขึ้นหรือมีอันตรายต่อชีวิต โทร 191 ทันที ไม่ต้องแจ้งผ่านระบบนี้</span></div>
+    <div class="stack" style="gap:8px"><h2>เรื่องของฉัน</h2>
+    ${mine.length?`<div class="caselist">${mine.map(c=>`<button class="caseitem" data-act="ccase" data-id="${c.id}">
+      <span><b>${esc(CATS[c.category].name)}</b> <span class="muted small">· ${esc(stn(c.stationId).name)}</span></span><span class="st st-${c.status}">${ST[c.status]}</span>
+      <span class="mono small muted">${esc(c.tracking)}</span><span class="small muted">${c.appt&&OPEN.includes(c.status)?`นัด ${fd(fromKey(c.appt.date))} ${c.appt.slot}`:fd(c.createdAt)}</span></button>`).join('')}</div>`
+      :`<p class="muted">ยังไม่มีเรื่องที่แจ้ง</p>`}</div>
+    <button class="btn" data-act="mode" data-v="nearby" style="justify-self:start">ค้นหาโรงพักใกล้คุณ</button>
+  </div>`;
+}
+function cCase(){
+  const c=DB.cases.find(x=>x.id===S.c.caseId);
+  const pub=c.history.filter(h=>h.pub).slice().reverse();
+  return `<div class="cit stack fade">
+    <button class="btn ghost" data-act="cview" data-v="home" style="justify-self:start">← เรื่องของฉัน</button>
+    ${S.c.justFiled===c.id?`<div class="note"><b>ยื่นเรื่องเรียบร้อย</b> เก็บเลขติดตามนี้ไว้ และนำบัตรประชาชนไปในวันนัด ระบบจะส่ง SMS เมื่อเจ้าหน้าที่ยืนยันนัด</div>`:''}
+    <div class="ticket"><div class="stack" style="gap:6px"><span class="lbl">เลขติดตามเรื่อง</span><span class="tracknum">${esc(c.tracking)}</span>
+      <div class="row"><span class="st st-${c.status}">${ST[c.status]}</span><span class="lv lv-${c.level}">ระดับ${LV[c.level].name}</span></div></div>
+      <div class="qr" id="qr" data-text="${esc(c.tracking)}"></div></div>
+    ${c.appt?`<div class="panel stack" style="gap:6px"><h3>นัดหมายพนักงานสอบสวน</h3>
+      <p><b>${TH_D[fromKey(c.appt.date).getDay()]} ${fd(fromKey(c.appt.date))} เวลา ${c.appt.slot} น.</b> ${c.appt.confirmed?'<span class="st st-closed">ยืนยันแล้ว</span>':'<span class="st">รอเจ้าหน้าที่ยืนยัน</span>'}</p>
+      <p class="small">${esc(stn(c.stationId).name)} ${c.assignee?'· '+esc(off(c.assignee).name):''}</p>
+      <a class="btn ghost" style="justify-self:start" href="https://www.google.com/maps/search/?api=1&query=${stn(c.stationId).lat},${stn(c.stationId).lng}" target="_blank" rel="noopener">นำทางไปโรงพัก ↗</a></div>`:''}
+    <div class="panel stack"><h3>รายละเอียดที่แจ้ง</h3><dl class="kv">
+      <dt>ประเภท</dt><dd>${esc(CATS[c.category].name)}</dd><dt>วันเวลาเกิดเหตุ</dt><dd>${fdt(c.incidentAt)}</dd><dt>สถานที่</dt><dd>${esc(c.place)}</dd>
+      <dt>รายละเอียด</dt><dd>${esc(c.desc)}</dd>${c.damage?`<dt>มูลค่าความเสียหาย</dt><dd>${money(c.damage)} บาท</dd>`:''}
+      ${c.files.length?`<dt>หลักฐาน</dt><dd class="evid">${c.files.map(f=>`<span>${esc(f)}</span>`).join('')}</dd>`:''}</dl></div>
+    <div class="panel stack"><h3>ความคืบหน้า</h3><ul class="timeline">${pub.map(h=>`<li><span></span><div><b>${esc(h.act)}</b><br><span class="small muted">${fdt(h.at)} · ${esc(h.by)}</span></div></li>`).join('')}</ul></div>
+    ${c.status==='new'?`<button class="btn danger" data-act="ccancel" style="justify-self:start">ยกเลิกเรื่องนี้</button>`:''}
+  </div>`;
+}
+/* --- new report wizard --- */
+const WSTEPS=['ความเร่งด่วน','ประเภทเรื่อง','รายละเอียด','เลือกโรงพัก','นัดหมาย','ยืนยัน'];
+function wizHead(){const w=S.c.wiz;return `<div class="stack" style="gap:6px"><div class="stepper">${WSTEPS.map((_,i)=>`<span class="${i<=w.step?'on':''}"></span>`).join('')}</div>
+  <p class="small muted">ขั้นที่ ${w.step+1} จาก ${WSTEPS.length} · ${WSTEPS[w.step]}</p></div>`}
+function cWizard(){
+  const w=S.c.wiz, d=w.d; let body='';
+  if(w.step===0){
+    body= w.emergency?`<div class="emer"><h2>โทรแจ้งเหตุด่วนทันที</h2><div class="row" style="gap:28px"><div><span class="num">191</span><p class="small">เหตุด่วนเหตุร้าย</p></div><div><span class="num">1669</span><p class="small">เจ็บป่วยฉุกเฉิน</p></div></div>
+        <p>เหตุที่กำลังเกิดขึ้นต้องให้เจ้าหน้าที่ไปที่เกิดเหตุทันที ระบบนัดหมายนี้ไม่เหมาะกับกรณีนี้ หลังเหตุการณ์สงบแล้วจึงค่อยแจ้งเรื่องผ่านระบบได้</p>
+        <button class="btn" data-act="wemer" data-v="0" style="justify-self:start">เหตุการณ์สงบแล้ว แจ้งเรื่องต่อ</button></div>`
+      :`<div class="panel stack"><h2>ขณะนี้มีเหตุร้ายกำลังเกิดขึ้น หรือมีผู้ได้รับอันตรายต่อชีวิตหรือไม่?</h2>
+        <div class="grid2"><button class="btn danger" data-act="wemer" data-v="1" style="padding:14px">ใช่ ยังมีอันตรายอยู่</button><button class="btn primary" data-act="wnext" style="padding:14px">ไม่ เหตุการณ์จบแล้ว</button></div></div>`;
+  }
+  if(w.step===1){
+    body=`<div class="stack"><h2>เรื่องที่ต้องการแจ้งเป็นประเภทใด</h2><div class="catgrid">${Object.entries(CATS).map(([k,v])=>`<button class="cat" data-act="wcat" data-k="${k}" aria-pressed="${d.category===k}"><b>${v.name}</b><span>${v.hint}</span></button>`).join('')}</div>
+      ${d.category==='online'?`<div class="note">คดีออนไลน์แจ้งได้ที่ <a href="https://thaipoliceonline.go.th" target="_blank" rel="noopener">thaipoliceonline.go.th</a> ซึ่งส่งเรื่องให้หน่วยเฉพาะทางโดยตรง หากต้องการพบพนักงานสอบสวนที่โรงพัก ทำต่อในระบบนี้ได้</div>`:''}</div>`;
+  }
+  if(w.step===2){
+    body=`<form class="panel stack" id="wdetail"><h2>รายละเอียดเหตุการณ์</h2>
+      <div class="grid2"><div class="field"><label for="w-when">วันเวลาที่เกิดเหตุ *</label><input id="w-when" type="datetime-local" value="${esc(d.when||'')}"></div>
+      <div class="field"><label for="w-dmg">มูลค่าความเสียหายโดยประมาณ (บาท)</label><input id="w-dmg" type="number" min="0" step="100" value="${esc(d.damage||'')}"></div></div>
+      <div class="field"><label for="w-place">สถานที่เกิดเหตุ *</label><input id="w-place" type="text" placeholder="เช่น หน้าร้านกาแฟ ถ.นิมมานเหมินท์ ซ.9" value="${esc(d.place||'')}"></div>
+      <div class="field"><label for="w-desc">เล่าเหตุการณ์ * <span class="muted">(อย่างน้อย 20 ตัวอักษร)</span></label><textarea id="w-desc" placeholder="เกิดอะไรขึ้น ใครเกี่ยวข้อง มีพยานหรือหลักฐานอะไรบ้าง">${esc(d.desc||'')}</textarea></div>
+      <div class="stack" style="gap:8px"><span class="lbl">คำถามคัดกรอง</span>
+        <label class="check"><input id="w-inj" type="checkbox" ${d.injured?'checked':''}><span>มีผู้ได้รับบาดเจ็บ</span></label>
+        <label class="check"><input id="w-wpn" type="checkbox" ${d.weapon?'checked':''}><span>มีการใช้หรือขู่ด้วยอาวุธ</span></label>
+        <label class="check"><input id="w-sus" type="checkbox" ${d.suspectKnown?'checked':''}><span>รู้จักหรือระบุตัวผู้กระทำได้</span></label></div>
+      <div class="field"><label for="w-files">แนบหลักฐาน (รูป วิดีโอ เอกสาร)</label><input id="w-files" type="file" multiple>${d.files&&d.files.length?`<span class="small muted">แนบแล้ว: ${d.files.map(esc).join(', ')}</span>`:''}</div>
+      <p id="w-err" class="small" style="color:var(--hi)" hidden></p></form>`;
+  }
+  if(w.step===3){
+    const t=triage(d);
+    body=`<div class="stack"><div class="panel stack" style="gap:8px"><div class="row"><h2>ผลคัดกรองเบื้องต้น</h2><span class="lv lv-${t.level}">ระดับ${LV[t.level].name}</span></div>
+      <ul class="why">${t.why.map(x=>`<li>${esc(x)}</li>`).join('')}</ul>
+      <p class="small muted">เจ้าหน้าที่จะรับเรื่องภายใน ${LV[t.level].sla} ชั่วโมง และอาจปรับระดับหลังตรวจสอบ</p></div>
+      <div class="panel stack"><h2>เลือกโรงพักที่จะไปพบพนักงานสอบสวน</h2><p class="small muted">แนะนำโรงพักที่รับผิดชอบท้องที่เกิดเหตุ</p>${stationPicker(d.stationId,true)}</div></div>`;
+  }
+  if(w.step===4){
+    const t=triage(d), now=new Date(); const [a,b]=LV[t.level].win; const dates=[];
+    for(let i=a;dates.length<6&&i<=b+6;i++){const x=new Date(now);x.setHours(0,0,0,0);x.setDate(x.getDate()+i);if(x.getDay()===0)continue;if(i===0&&now.getHours()>=parseInt(SLOTS[SLOTS.length-1]))continue;dates.push(dkey(x))}
+    const sel=d.apptDate||dates[0]; if(!d.apptDate) d.apptDate=sel;
+    const taken=new Set(DB.cases.filter(c=>c.stationId===d.stationId&&c.appt&&c.appt.date===sel&&OPEN.includes(c.status)).map(c=>c.appt.slot));
+    const isToday=sel===dkey(now);
+    body=`<div class="panel stack"><h2>เลือกวันและเวลานัด</h2><p class="small muted">${esc(stn(d.stationId).name)} · ระดับ${LV[t.level].name} นัดได้ภายในช่วงวันที่แสดง (ปิดวันอาทิตย์)</p>
+      <div class="stack" style="gap:6px"><span class="lbl">วันที่</span><div class="chips">${dates.map(k=>{const x=fromKey(k);return `<button class="chip" data-act="wdate" data-k="${k}" aria-pressed="${k===sel}">${TH_D[x.getDay()]} ${x.getDate()} ${TH_M[x.getMonth()]}</button>`}).join('')}</div></div>
+      <div class="stack" style="gap:6px"><span class="lbl">เวลา</span><div class="chips">${SLOTS.map(s=>{const past=isToday&&parseInt(s)<=now.getHours();const dis=taken.has(s)||past;return `<button class="chip" data-act="wslot" data-s="${s}" aria-pressed="${d.apptSlot===s}" ${dis?'disabled':''}>${s}</button>`}).join('')}</div>
+      <span class="small muted">ช่วงเวลาที่ขีดฆ่ามีผู้จองแล้ว</span></div></div>`;
+  }
+  if(w.step===5){
+    const t=triage(d), me=DB.citizens[S.c.pid];
+    body=`<div class="stack"><div class="panel stack"><h2>ตรวจสอบก่อนยื่นเรื่อง</h2><dl class="kv">
+      <dt>ผู้แจ้ง</dt><dd>${esc(me.prefix+me.first+' '+me.last)} · <span class="mono">${mpid(me.pid)}</span> · ${esc(me.phone)}</dd>
+      <dt>ประเภท</dt><dd>${esc(CATS[d.category].name)} <span class="lv lv-${t.level}">ระดับ${LV[t.level].name}</span></dd>
+      <dt>วันเวลาเกิดเหตุ</dt><dd>${fdt(d.when)}</dd><dt>สถานที่</dt><dd>${esc(d.place)}</dd><dt>รายละเอียด</dt><dd>${esc(d.desc)}</dd>
+      ${d.damage?`<dt>ความเสียหาย</dt><dd>${money(d.damage)} บาท</dd>`:''}${d.files.length?`<dt>หลักฐาน</dt><dd>${d.files.map(esc).join(', ')}</dd>`:''}
+      <dt>โรงพัก</dt><dd>${esc(stn(d.stationId).name)}</dd><dt>นัดหมาย</dt><dd>${fd(fromKey(d.apptDate))} เวลา ${d.apptSlot} น.</dd></dl></div>
+      <div class="panel stack" style="gap:10px">
+        <label class="check"><input id="w-c1" type="checkbox"><span>ข้าพเจ้ายืนยันว่าข้อมูลเป็นความจริง และทราบว่าการแจ้งความเท็จมีความผิดตามประมวลกฎหมายอาญา มาตรา 172 และ 173</span></label>
+        <label class="check"><input id="w-c2" type="checkbox"><span>ยินยอมให้เจ้าหน้าที่ใช้ข้อมูลส่วนบุคคลเพื่อดำเนินการเรื่องนี้ ตาม พ.ร.บ.คุ้มครองข้อมูลส่วนบุคคล พ.ศ. 2562</span></label>
+        <p id="w-err" class="small" style="color:var(--hi)" hidden></p></div></div>`;
+  }
+  const nextLbl=w.step===5?'ยื่นเรื่อง':'ถัดไป';
+  const showNav=!(w.step===0);
+  return `<div class="cit stack fade">
+    <div class="row" style="justify-content:space-between"><h1>แจ้งเรื่องใหม่</h1><button class="btn ghost" data-act="cview" data-v="home">ยกเลิก</button></div>
+    ${wizHead()}${body}
+    ${showNav?`<div class="row" style="justify-content:space-between"><button class="btn" data-act="wback">ย้อนกลับ</button><button class="btn primary" data-act="wnext">${nextLbl}</button></div>`:''}
+  </div>`;
+}
+function wizNext(){
+  const w=S.c.wiz,d=w.d;
+  if(w.step===1&&!d.category) return toast('เลือกประเภทเรื่องก่อน');
+  if(w.step===2){
+    readDetail();
+    const err=[]; if(!d.when)err.push('วันเวลาที่เกิดเหตุ'); if(!d.place.trim())err.push('สถานที่'); if(d.desc.trim().length<20)err.push('คำบรรยายอย่างน้อย 20 ตัวอักษร');
+    if(d.when&&new Date(d.when)>new Date())err.push('วันเวลาเกิดเหตุต้องไม่เกินปัจจุบัน');
+    if(err.length){const e=$('#w-err');e.textContent='กรุณากรอก: '+err.join(', ');e.hidden=false;return}
+    if(!d.stationId){const n=STATIONS.map(s=>({s,d:km(S.c.me,s)})).sort((a,b)=>a.d-b.d)[0].s;d.stationId=n.id}
+  }
+  if(w.step===3&&!d.stationId) return toast('เลือกโรงพักก่อน');
+  if(w.step===4&&!d.apptSlot) return toast('เลือกเวลานัดก่อน');
+  if(w.step===5){
+    if(!$('#w-c1').checked||!$('#w-c2').checked){const e=$('#w-err');e.textContent='กรุณายืนยันทั้งสองข้อก่อนยื่นเรื่อง';e.hidden=false;return}
+    return submitCase();
+  }
+  w.step++; go();
+}
+function readDetail(){
+  const d=S.c.wiz.d;
+  d.when=$('#w-when').value; d.place=$('#w-place').value; d.desc=$('#w-desc').value; d.damage=Number($('#w-dmg').value)||0;
+  d.injured=$('#w-inj').checked; d.weapon=$('#w-wpn').checked; d.suspectKnown=$('#w-sus').checked;
+  const f=$('#w-files').files; if(f&&f.length) d.files=[...f].map(x=>x.name);
+}
+function submitCase(){
+  const d=S.c.wiz.d, me=DB.citizens[S.c.pid], t=triage(d), now=Date.now();
+  const c={id:'c'+now.toString(36),createdAt:now,reporter:{pid:me.pid,prefix:me.prefix,first:me.first,last:me.last,phone:me.phone,email:me.email||''},
+    category:d.category,desc:d.desc,place:d.place,incidentAt:+new Date(d.when),damage:d.damage,injured:d.injured,weapon:d.weapon,suspectKnown:d.suspectKnown,files:d.files,
+    stationId:d.stationId,level:t.level,levelAuto:t.level,why:t.why,status:'new',assignee:null,appt:{date:d.apptDate,slot:d.apptSlot,confirmed:false},acceptedAt:null,closedAt:null,closeReason:null,
+    history:[{at:now,by:'ผู้แจ้ง',act:'ยื่นเรื่องผ่านระบบ',pub:1},{at:now+1000,by:'ระบบ',act:`คัดกรองอัตโนมัติ: ระดับ${LV[t.level].name}`,pub:1},{at:now+2000,by:'ผู้แจ้ง',act:`ขอนัดหมาย ${fd(fromKey(d.apptDate))} เวลา ${d.apptSlot} น.`,pub:1}]};
+  c.tracking=trackingFor(c,DB); DB.cases.push(c); save();
+  S.c.caseId=c.id; S.c.justFiled=c.id; S.c.view='case'; S.c.wiz=null; go();
+}
+
+/* ============ officer views ============ */
+function slaInfo(c){
+  if(c.status!=='new') return '';
+  const left=(c.createdAt+LV[c.level].sla*H-Date.now())/H;
+  return left<0?`<span class="sla over">เกิน SLA ${Math.ceil(-left)} ชม.</span>`:`<span class="sla">เหลือ ${Math.floor(left)} ชม.</span>`;
+}
+const isOver=c=>c.status==='new'&&Date.now()>c.createdAt+LV[c.level].sla*H;
+function oLogin(){
+  return `<div class="cit stack fade"><div><h1>ระบบหลังบ้านสำหรับเจ้าหน้าที่</h1><p class="muted">ระบบจริงใช้บัญชีเจ้าหน้าที่พร้อมยืนยันตัวตนสองชั้น (2FA) ในต้นแบบนี้ให้เลือกผู้ใช้ทดสอบ</p></div>
+    <div class="panel thaid">${OFFICERS.map(o=>`<button class="person" data-act="ologin" data-id="${o.id}"><span class="avatar">${esc(o.roleName[0])}</span><span><b>${esc(o.name)}</b><br><span class="small muted">${esc(o.roleName)}</span></span></button>`).join('')}
+    <span class="sample" style="justify-self:start">เจ้าหน้าที่สมมติสำหรับทดสอบ</span></div></div>`;
+}
+function oShell(inner){
+  const me=off(S.o.id), cnt=DB.cases.filter(c=>c.status==='new').length;
+  const nav=[['inbox','กล่องรับเรื่อง',cnt],['appts','นัดหมาย',0],['reports','รายงาน',0]];
+  return `<div class="off fade"><nav class="rail" aria-label="เมนูเจ้าหน้าที่"><div class="who"><b style="color:var(--ink)">${esc(me.name)}</b><br>${esc(me.roleName)}</div>
+    ${nav.map(([k,l,n])=>`<button data-act="oview" data-v="${k}" ${S.o.view===k||(k==='inbox'&&S.o.view==='case')?'aria-current="page"':''}><span>${l}</span>${n?`<span class="badge">${n}</span>`:''}</button>`).join('')}
+    <button data-act="ologout"><span>ออกจากระบบ</span></button>
+    <button data-act="reset" class="small"><span>รีเซ็ตข้อมูลตัวอย่าง</span></button></nav><section style="min-width:0" class="stack">${inner}</section></div>`;
+}
+function filtered(){
+  const f=S.o.f, q=f.q.trim().toLowerCase();
+  return DB.cases.filter(c=>{
+    if(f.status==='open'&&!OPEN.includes(c.status))return false;
+    if(f.status==='over'&&!isOver(c))return false;
+    if(f.status==='today'&&!(c.appt&&c.appt.date===dkey(Date.now())&&OPEN.includes(c.status)))return false;
+    if(!['open','all','over','today'].includes(f.status)&&c.status!==f.status)return false;
+    if(f.level!=='all'&&c.level!==f.level)return false;
+    if(f.station!=='all'&&c.stationId!==f.station)return false;
+    if(q&&!(c.tracking.toLowerCase().includes(q)||(c.reporter.first+' '+c.reporter.last).toLowerCase().includes(q)||c.desc.toLowerCase().includes(q)))return false;
+    return true;
+  }).sort((a,b)=>(OPEN.includes(a.status)&&OPEN.includes(b.status))?(LV_ORDER[a.level]-LV_ORDER[b.level]||a.createdAt-b.createdAt):b.createdAt-a.createdAt);
+}
+function oInbox(){
+  const f=S.o.f, list=filtered(), today=dkey(Date.now());
+  const sums=[['new','รอรับเรื่อง',DB.cases.filter(c=>c.status==='new').length],['over','เกิน SLA',DB.cases.filter(isOver).length,1],
+    ['today','นัดวันนี้',DB.cases.filter(c=>c.appt&&c.appt.date===today&&OPEN.includes(c.status)).length],['open','กำลังดำเนินการทั้งหมด',DB.cases.filter(c=>OPEN.includes(c.status)).length]];
+  const shown=list.slice(0,60);
+  return oShell(`<div class="row" style="justify-content:space-between"><h1>กล่องรับเรื่อง</h1><span class="sample">ข้อมูลตัวอย่าง</span></div>
+    <div class="summary">${sums.map(([k,l,n,al])=>`<button class="sum ${al&&n?'alert':''}" data-act="ofilter" data-v="${k}"><b>${n}</b><span>${l}</span></button>`).join('')}</div>
+    <div class="filters">
+      <div class="field"><label for="f-status">สถานะ</label><select id="f-status" data-change="fstatus">${[['open','กำลังดำเนินการ'],['all','ทั้งหมด'],['over','เกิน SLA'],['today','นัดวันนี้'],...Object.entries(ST)].map(([k,v])=>`<option value="${k}" ${f.status===k?'selected':''}>${v}</option>`).join('')}</select></div>
+      <div class="field"><label for="f-level">ระดับ</label><select id="f-level" data-change="flevel"><option value="all">ทุกระดับ</option>${Object.entries(LV).map(([k,v])=>`<option value="${k}" ${f.level===k?'selected':''}>${v.name}</option>`).join('')}</select></div>
+      <div class="field"><label for="f-station">โรงพัก</label><select id="f-station" data-change="fstation"><option value="all">ทุกโรงพัก</option>${STATIONS.map(s=>`<option value="${s.id}" ${f.station===s.id?'selected':''}>${s.name}</option>`).join('')}</select></div>
+      <div class="field"><label for="f-q">ค้นหา</label><input id="f-q" type="text" placeholder="เลขติดตาม ชื่อ หรือคำในเรื่อง" value="${esc(f.q)}" data-change="fq"></div>
+    </div>
+    <p class="small muted">พบ ${list.length} เรื่อง${list.length>60?' (แสดง 60 เรื่องแรก)':''} · เรียงตามความเร่งด่วน</p>
+    <div class="tablewrap"><table><thead><tr><th></th><th>เลขติดตาม</th><th>เรื่อง</th><th>ผู้แจ้ง</th><th>โรงพัก</th><th>สถานะ</th><th>พงส.</th><th>ยื่นเมื่อ</th></tr></thead><tbody>
+    ${shown.map(c=>`<tr data-act="ocase" data-id="${c.id}"><td class="stripe"><i class="s-${c.level}" title="ระดับ${LV[c.level].name}"></i></td>
+      <td class="mono small">${esc(c.tracking)}</td><td><b>${esc(CATS[c.category].name)}</b><br><span class="small muted">${esc(c.desc.slice(0,48))}${c.desc.length>48?'…':''}</span></td>
+      <td>${esc(c.reporter.first+' '+c.reporter.last)}</td><td>${esc(stn(c.stationId).name)}</td>
+      <td><span class="st st-${c.status}">${ST[c.status]}</span><br>${slaInfo(c)}</td><td class="small">${c.assignee?esc(off(c.assignee).name):'<span class="muted">-</span>'}</td><td class="small">${fdt(c.createdAt)}</td></tr>`).join('')||`<tr><td colspan="8" class="muted">ไม่มีเรื่องตามเงื่อนไขนี้</td></tr>`}
+    </tbody></table></div>`);
+}
+function oCase(){
+  const c=DB.cases.find(x=>x.id===S.o.caseId), r=c.reporter, me=off(S.o.id);
+  const isOpen=OPEN.includes(c.status);
+  const nextSt={new:['accepted'],accepted:['assigned'],assigned:['met'],met:['investigating'],investigating:[]}[c.status]||[];
+  return oShell(`<div class="row" style="justify-content:space-between"><button class="btn ghost" data-act="oview" data-v="inbox">← กล่องรับเรื่อง</button><span class="sample">ข้อมูลตัวอย่าง</span></div>
+    <div class="row"><h1 class="mono" style="font-size:1.3rem">${esc(c.tracking)}</h1><span class="lv lv-${c.level}">ระดับ${LV[c.level].name}</span><span class="st st-${c.status}">${ST[c.status]}</span>${slaInfo(c)}</div>
+    <div class="casegrid">
+      <div class="stack">
+        <div class="panel stack"><h3>รายละเอียดเรื่อง</h3><dl class="kv">
+          <dt>ประเภท</dt><dd>${esc(CATS[c.category].name)}</dd><dt>วันเวลาเกิดเหตุ</dt><dd>${fdt(c.incidentAt)}</dd><dt>สถานที่</dt><dd>${esc(c.place)}</dd>
+          <dt>คำบรรยาย</dt><dd>${esc(c.desc)}</dd><dt>ความเสียหาย</dt><dd>${c.damage?money(c.damage)+' บาท':'-'}</dd>
+          <dt>คัดกรอง</dt><dd>${c.injured?'มีผู้บาดเจ็บ · ':''}${c.weapon?'มีอาวุธ · ':''}${c.suspectKnown?'ระบุตัวผู้กระทำได้':'ยังไม่ทราบตัวผู้กระทำ'}</dd>
+          <dt>หลักฐาน</dt><dd class="evid">${c.files.length?c.files.map(f=>`<span>${esc(f)}</span>`).join(''):'<span>ไม่มี</span>'}</dd>
+          <dt>โรงพัก</dt><dd>${esc(stn(c.stationId).name)}</dd><dt>ยื่นเมื่อ</dt><dd>${fdt(c.createdAt)}</dd></dl>
+          <div class="note small"><b>เหตุผลการคัดกรองอัตโนมัติ (ระดับ${LV[c.levelAuto].name})</b><ul class="why">${(c.why||[]).map(x=>`<li>${esc(x)}</li>`).join('')}</ul></div></div>
+        <div class="panel stack"><h3>ผู้แจ้ง <span class="small muted">(ยืนยันตัวตนด้วย ThaID)</span></h3><dl class="kv">
+          <dt>ชื่อ-นามสกุล</dt><dd>${esc(r.prefix+r.first+' '+r.last)}</dd>
+          <dt>เลขบัตรประชาชน</dt><dd><span class="mono">${S.o.showPid?fpid(r.pid):mpid(r.pid)}</span> ${S.o.showPid?'':`<button class="btn ghost small" data-act="showpid">แสดง (บันทึกการเข้าถึง)</button>`}</dd>
+          <dt>เบอร์โทร</dt><dd class="mono">${esc(r.phone)}</dd>${r.email?`<dt>อีเมล</dt><dd>${esc(r.email)}</dd>`:''}</dl></div>
+        <div class="panel stack"><h3>ประวัติและบันทึกการดำเนินการ</h3><ul class="timeline">${c.history.slice().reverse().map(h=>`<li class="${h.pub?'':'int'}"><span></span><div><b>${esc(h.act)}</b>${h.note?`<br><span class="small">${esc(h.note)}</span>`:''}<br><span class="small muted">${fdt(h.at)} · ${esc(h.by)}${h.pub?'':' · ภายใน'}</span></div></li>`).join('')}</ul></div>
+      </div>
+      <div class="panel actions">
+        <h3>ดำเนินการ</h3>
+        ${isOpen?`
+        ${nextSt.includes('accepted')?`<div class="grp"><button class="btn primary block" data-act="oaccept">รับเรื่อง</button></div>`:''}
+        <div class="grp"><span class="lbl">มอบหมายพนักงานสอบสวน</span><div class="row"><select id="a-off" style="flex:1">${INV.map(o=>`<option value="${o.id}" ${c.assignee===o.id?'selected':''}>${esc(o.name)} (${DB.cases.filter(x=>x.assignee===o.id&&OPEN.includes(x.status)).length} เรื่อง)</option>`).join('')}</select><button class="btn" data-act="oassign">มอบหมาย</button></div></div>
+        <div class="grp"><span class="lbl">นัดหมาย</span>
+          ${c.appt?`<p class="small">${fd(fromKey(c.appt.date))} เวลา ${c.appt.slot} น. ${c.appt.confirmed?'<span class="st st-closed">ยืนยันแล้ว</span>':'<span class="st st-new">รอยืนยัน</span>'}${c.appt.noShow?' <span class="st">ไม่มาตามนัด</span>':''}</p>`:'<p class="small muted">ยังไม่มีนัด</p>'}
+          <div class="row"><input id="a-date" type="date" value="${c.appt?c.appt.date:dkey(Date.now()+D)}" style="flex:1;min-width:140px"><select id="a-slot" style="width:auto">${SLOTS.map(s=>`<option ${c.appt&&c.appt.slot===s?'selected':''}>${s}</option>`).join('')}</select></div>
+          <div class="row">${c.appt&&!c.appt.confirmed?`<button class="btn primary" data-act="oconfirm">ยืนยันนัดตามที่ขอ</button>`:''}<button class="btn" data-act="oresched">${c.appt?'เลื่อนนัด':'สร้างนัด'}</button>${c.appt&&c.status==='assigned'?`<button class="btn ghost" data-act="onoshow">ไม่มาตามนัด</button>`:''}</div></div>
+        <div class="grp"><span class="lbl">ปรับระดับความเร่งด่วน</span><div class="row"><select id="a-lv" style="flex:1">${Object.entries(LV).map(([k,v])=>`<option value="${k}" ${c.level===k?'selected':''}>${v.name}</option>`).join('')}</select><button class="btn" data-act="olevel">ปรับ</button></div><input id="a-lvwhy" type="text" placeholder="เหตุผลการปรับระดับ"></div>
+        <div class="grp"><span class="lbl">อัปเดตสถานะ</span><div class="row"><select id="a-st" style="flex:1">${OPEN.map(k=>`<option value="${k}" ${c.status===k?'selected':''}>${ST[k]}</option>`).join('')}</select></div>
+          <textarea id="a-note" placeholder="บันทึกความคืบหน้า" style="min-height:70px"></textarea>
+          <label class="check small"><input id="a-pub" type="checkbox" checked><span>แสดงข้อความนี้ให้ผู้แจ้งเห็น</span></label>
+          <button class="btn" data-act="ostatus">บันทึก</button></div>
+        <div class="grp"><span class="lbl">ปิดเรื่อง</span><select id="a-close">${CLOSE_REASONS.map(x=>`<option>${x}</option>`).join('')}<option value="__ref">ส่งต่อหน่วยงานอื่น</option></select>
+          <input id="a-closenote" type="text" placeholder="รายละเอียด เช่น เลขคดี เลขประจำวัน หรือหน่วยงานที่ส่งต่อ"><button class="btn danger" data-act="oclose">ปิดเรื่อง</button></div>`
+        :`<p>เรื่องนี้${ST[c.status]}เมื่อ ${fdt(c.closedAt)}</p><p class="small muted">เหตุผล: ${esc(c.closeReason||'-')}</p>
+          ${me.role==='sup'?`<button class="btn" data-act="oreopen">เปิดเรื่องใหม่</button>`:'<p class="small muted">หัวหน้างานสอบสวนเท่านั้นที่เปิดเรื่องใหม่ได้</p>'}`}
+      </div>
+    </div>`);
+}
+function oAppts(){
+  const today=dkey(Date.now()); const up=DB.cases.filter(c=>c.appt&&c.appt.date>=today&&OPEN.includes(c.status)).sort((a,b)=>(a.appt.date+a.appt.slot).localeCompare(b.appt.date+b.appt.slot));
+  const byDay={}; up.forEach(c=>(byDay[c.appt.date]=byDay[c.appt.date]||[]).push(c));
+  return oShell(`<h1>นัดหมายที่จะถึง</h1>
+    ${Object.keys(byDay).length?Object.entries(byDay).map(([k,list])=>{const x=fromKey(k);return `<div class="stack" style="gap:8px"><h3>${k===today?'วันนี้ · ':''}${TH_D[x.getDay()]} ${fd(x)} <span class="muted small">(${list.length} นัด)</span></h3>
+      <div class="tablewrap"><table><thead><tr><th>เวลา</th><th>เลขติดตาม</th><th>เรื่อง</th><th>ผู้แจ้ง</th><th>โรงพัก</th><th>พงส.</th><th>สถานะนัด</th></tr></thead><tbody>
+      ${list.map(c=>`<tr data-act="ocase" data-id="${c.id}"><td class="mono">${c.appt.slot}</td><td class="mono small">${esc(c.tracking)}</td><td><span class="lv lv-${c.level}">${LV[c.level].name}</span> ${esc(CATS[c.category].name)}</td><td>${esc(c.reporter.first+' '+c.reporter.last)}<br><span class="small mono muted">${esc(c.reporter.phone)}</span></td><td>${esc(stn(c.stationId).name)}</td><td class="small">${c.assignee?esc(off(c.assignee).name):'<span class="muted">ยังไม่มอบหมาย</span>'}</td><td>${c.appt.confirmed?'<span class="st st-closed">ยืนยันแล้ว</span>':'<span class="st st-new">รอยืนยัน</span>'}</td></tr>`).join('')}
+      </tbody></table></div></div>`}).join(''):'<p class="muted">ไม่มีนัดหมายที่จะถึง</p>'}`);
+}
+/* --- reports --- */
+function repRange(){
+  const r=S.o.rep;
+  if(r.type==='daily'){const a=fromKey(r.day);return{a:+a,b:+a+D,label:`ประจำวันที่ ${fd(a)}`,buckets:24,bi:t=>new Date(t).getHours(),bl:i=>pad(i)}}
+  if(r.type==='monthly'){const a=new Date(r.y,r.m,1),b=new Date(r.y,r.m+1,1);const n=Math.round((b-a)/D);return{a:+a,b:+b,label:`ประจำเดือน${TH_MF[r.m]} ${r.y+543}`,buckets:n,bi:t=>new Date(t).getDate()-1,bl:i=>String(i+1)}}
+  const a=new Date(r.y,0,1),b=new Date(r.y+1,0,1);return{a:+a,b:+b,label:`ประจำปี ${r.y+543}`,buckets:12,bi:t=>new Date(t).getMonth(),bl:i=>TH_M[i]};
+}
+function barList(rows,max){max=max||Math.max(1,...rows.map(r=>r[1]));return `<div class="bars">${rows.map(([l,v,cls])=>`<div class="bar"><span>${l}</span><span class="track"><span class="fill" style="width:${v/max*100}%;${cls?`background:var(--${cls})`:''}"></span></span><span class="num">${v}</span></div>`).join('')}</div>`}
+function oReports(){
+  const r=S.o.rep, R=repRange(), now=Date.now();
+  const inP=DB.cases.filter(c=>c.createdAt>=R.a&&c.createdAt<R.b);
+  const done=inP.filter(c=>DONE.includes(c.status)), closed=inP.filter(c=>c.status==='closed');
+  const avgClose=closed.length?closed.reduce((s,c)=>s+(c.closedAt-c.createdAt),0)/closed.length/D:0;
+  const acc=inP.filter(c=>c.acceptedAt), inSla=acc.filter(c=>c.acceptedAt-c.createdAt<=LV[c.level].sla*H).length;
+  const appts=inP.filter(c=>c.appt&&c.appt.confirmed&&+fromKey(c.appt.date)<now-D), shows=appts.filter(c=>!c.appt.noShow).length;
+  const closedInP=DB.cases.filter(c=>c.closedAt&&c.closedAt>=R.a&&c.closedAt<R.b).length;
+  const b=Array(R.buckets).fill(0); inP.forEach(c=>b[R.bi(c.createdAt)]++); const bmax=Math.max(1,...b);
+  const cats=Object.entries(CATS).map(([k,v])=>[v.name,inP.filter(c=>c.category===k).length]).sort((x,y)=>y[1]-x[1]);
+  const lvs=Object.entries(LV).map(([k,v])=>[`ระดับ${v.name}`,inP.filter(c=>c.level===k).length,k==='high'?'hi':k==='med'?'med':'low']);
+  const sts=Object.entries(ST).map(([k,v])=>[v,inP.filter(c=>c.status===k).length]);
+  const years=[];for(let y=new Date().getFullYear();y>=new Date().getFullYear()-2;y--)years.push(y);
+  const stRows=STATIONS.map(s=>{const l=inP.filter(c=>c.stationId===s.id),cl=l.filter(c=>c.status==='closed');return{s,n:l.length,open:l.filter(c=>OPEN.includes(c.status)).length,done:l.filter(c=>DONE.includes(c.status)).length,avg:cl.length?cl.reduce((a,c)=>a+(c.closedAt-c.createdAt),0)/cl.length/D:null,over:l.filter(c=>c.acceptedAt&&c.acceptedAt-c.createdAt>LV[c.level].sla*H||isOver(c)).length}});
+  const invRows=INV.map(o=>({o,open:DB.cases.filter(c=>c.assignee===o.id&&OPEN.includes(c.status)).length,closedP:DB.cases.filter(c=>c.assignee===o.id&&c.closedAt&&c.closedAt>=R.a&&c.closedAt<R.b).length}));
+  return oShell(`<div class="row" style="justify-content:space-between"><h1>รายงาน</h1><span class="sample">ข้อมูลตัวอย่าง</span></div>
+    <div class="row">
+      <div class="seg" role="group" aria-label="ช่วงรายงาน">${[['daily','รายวัน'],['monthly','รายเดือน'],['yearly','รายปี']].map(([k,l])=>`<button data-act="rtype" data-v="${k}" aria-pressed="${r.type===k}">${l}</button>`).join('')}</div>
+      ${r.type==='daily'?`<input id="r-day" type="date" value="${r.day}" data-change="rday" style="width:auto">`:''}
+      ${r.type==='monthly'?`<select id="r-m" data-change="rm" style="width:auto">${TH_MF.map((m,i)=>`<option value="${i}" ${r.m===i?'selected':''}>${m}</option>`).join('')}</select>`:''}
+      ${r.type!=='daily'?`<select id="r-y" data-change="ry" style="width:auto">${years.map(y=>`<option value="${y}" ${r.y===y?'selected':''}>${y+543}</option>`).join('')}</select>`:''}
+      <button class="btn" data-act="rcsv">คัดลอกเป็น CSV</button>
+    </div>
+    ${S.o.csv?`<div class="field"><label for="r-csvbox">คัดลอกข้อความนี้ไปวางใน Excel</label><textarea id="r-csvbox" readonly style="min-height:90px" class="mono small">${esc(S.o.csv)}</textarea></div>`:''}
+    <h2>${R.label}</h2>
+    <div class="kpis">
+      <div class="kpi"><b>${inP.length}</b><span>เรื่องที่รับเข้า</span></div>
+      <div class="kpi"><b>${inP.filter(c=>OPEN.includes(c.status)).length}</b><span>ยังดำเนินการอยู่</span></div>
+      <div class="kpi"><b>${closedInP}</b><span>ปิดเรื่องในช่วงนี้</span></div>
+      <div class="kpi"><b>${closed.length?avgClose.toFixed(1):'-'}</b><span>วันเฉลี่ยจนปิดเรื่อง</span></div>
+      <div class="kpi"><b>${acc.length?Math.round(inSla/acc.length*100)+'%':'-'}</b><span>รับเรื่องทันตาม SLA</span></div>
+      <div class="kpi"><b>${appts.length?Math.round(shows/appts.length*100)+'%':'-'}</b><span>ผู้แจ้งมาตามนัด</span></div>
+    </div>
+    <div class="panel stack"><h3>จำนวนเรื่องที่รับเข้า ${r.type==='daily'?'รายชั่วโมง':r.type==='monthly'?'รายวัน':'รายเดือน'}</h3>
+      <div><div class="cols">${b.map((v,i)=>`<div style="height:${v/bmax*100}%" data-v="${R.bl(i)}: ${v}" title="${R.bl(i)}: ${v}"></div>`).join('')}</div>
+      <div class="colx">${b.map((_,i)=>`<span>${(R.buckets>14&&i%Math.ceil(R.buckets/12)!==0)?'':R.bl(i)}</span>`).join('')}</div></div></div>
+    <div class="grid2" style="grid-template-columns:repeat(auto-fit,minmax(300px,1fr))">
+      <div class="panel stack"><h3>แยกตามประเภท</h3>${barList(cats)}</div>
+      <div class="panel stack"><h3>แยกตามระดับความเร่งด่วน</h3>${barList(lvs)}<h3 style="margin-top:8px">แยกตามสถานะ</h3>${barList(sts)}</div>
+    </div>
+    <div class="stack" style="gap:8px"><h3>สรุปรายโรงพัก</h3><div class="tablewrap"><table><thead><tr><th>โรงพัก</th><th class="num">รับเข้า</th><th class="num">ดำเนินการอยู่</th><th class="num">ปิดแล้ว</th><th class="num">วันเฉลี่ยจนปิด</th><th class="num">รับเรื่องช้ากว่า SLA</th></tr></thead><tbody>
+      ${stRows.map(x=>`<tr><td>${esc(x.s.name)}</td><td class="num">${x.n}</td><td class="num">${x.open}</td><td class="num">${x.done}</td><td class="num">${x.avg==null?'-':x.avg.toFixed(1)}</td><td class="num" style="${x.over?'color:var(--hi)':''}">${x.over}</td></tr>`).join('')}
+    </tbody></table></div></div>
+    <div class="stack" style="gap:8px"><h3>ภาระงานพนักงานสอบสวน</h3><div class="tablewrap"><table><thead><tr><th>พนักงานสอบสวน</th><th class="num">เรื่องค้างอยู่ตอนนี้</th><th class="num">ปิดเรื่องในช่วงนี้</th></tr></thead><tbody>
+      ${invRows.map(x=>`<tr><td>${esc(x.o.name)}</td><td class="num">${x.open}</td><td class="num">${x.closedP}</td></tr>`).join('')}</tbody></table></div></div>`);
+}
+
+/* ============ home & nearby ============ */
+const GPS={busy:false,err:''};
+function geoErr(code){
+  const m={1:'ไม่ได้รับสิทธิ์เข้าถึงตำแหน่ง กดอนุญาตตำแหน่งในการตั้งค่าเบราว์เซอร์ ถ้าเปิดผ่านลิงก์พรีวิวของ Claude การแชร์ตำแหน่งจะถูกปิดไว้ ให้เปิดไฟล์ที่ฝากไว้บนเว็บ https แทน',2:'หาตำแหน่งไม่ได้ ตรวจสอบว่าเปิด Location/GPS ของมือถือแล้ว',3:'หาตำแหน่งนานเกินไป ลองใหม่อีกครั้ง',9:'เบราว์เซอร์นี้ไม่รองรับการระบุตำแหน่ง'}[code]||'หาตำแหน่งไม่ได้';
+  return `<b>${m}</b><br>ระหว่างนี้แตะบนแผนผังหรือเลือกจุดด้านล่าง หรือ <a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent('สถานีตำรวจ')}" target="_blank" rel="noopener">เปิด Google Maps ค้นหาโรงพักใกล้ฉัน ↗</a>`;
+}
+function locate(){
+  if(!navigator.geolocation){GPS.err=geoErr(9);render();return}
+  GPS.busy=true;GPS.err='';render();
+  const fail=code=>{GPS.busy=false;GPS.err=geoErr(code);render()};
+  try{navigator.geolocation.getCurrentPosition(p=>{GPS.busy=false;S.c.me={lat:p.coords.latitude,lng:p.coords.longitude,acc:p.coords.accuracy,label:`GPS ของคุณ (±${Math.round(p.coords.accuracy)} ม.)`};render();toast('ได้ตำแหน่งแล้ว')},e=>fail(e.code),{enableHighAccuracy:true,timeout:12000,maximumAge:60000})}catch(e){fail(1)}
+}
+const IC={
+  citizen:'<svg viewBox="0 0 48 48" aria-hidden="true"><circle cx="18" cy="15" r="7"/><path d="M5 41c0-8 6-13.5 13-13.5S31 33 31 41"/><rect x="31" y="20" width="13" height="18" rx="2"/><path d="M34.5 26h6M34.5 31h4"/></svg>',
+  officer:'<svg viewBox="0 0 48 48" aria-hidden="true"><path d="M24 4.5l15 6V22c0 10-6.5 17-15 21.5C15.5 39 9 32 9 22V10.5z"/><path d="M24 15l2.6 5.3 5.8.8-4.2 4.1 1 5.8L24 28.3 18.8 31l1-5.8-4.2-4.1 5.8-.8z"/></svg>',
+  nearby:'<svg viewBox="0 0 48 48" aria-hidden="true"><path d="M24 44s14-12.5 14-24a14 14 0 0 0-28 0c0 11.5 14 24 14 24z"/><circle cx="24" cy="20" r="5"/></svg>'
+};
+function homeView(){
+  const t=(k,title,d)=>`<button class="tile ${k}" data-act="mode" data-v="${k}"><span class="ic">${IC[k]}</span><b>${title}</b><span class="d">${d}</span></button>`;
+  return `<div class="home fade">
+    <div class="stack" style="gap:4px"><p class="eyebrow">ตัวอย่างจังหวัดเชียงใหม่</p><h1>ต้องการทำอะไร</h1></div>
+    <div class="tiles">
+      ${t('citizen','ประชาชน','แจ้งเรื่อง นัดพนักงานสอบสวน และติดตามสถานะ เข้าด้วย ThaID')}
+      ${t('officer','เจ้าหน้าที่','รับเรื่อง มอบหมายงาน อัปเดตสถานะ และดูรายงาน')}
+      ${t('nearby','ค้นหาโรงพักใกล้คุณ','แชร์ตำแหน่งจากมือถือ ดูโรงพักที่ใกล้ที่สุดและนำทาง')}
+    </div>
+    <button class="tracklink" data-act="hometrack">ตรวจสอบสถานะด้วยเลขติดตาม →</button>
+    <div class="emer" style="border-width:1px;grid-template-columns:auto 1fr;align-items:center"><span class="num" style="font-size:1.6rem">191</span><span class="small">ถ้ามีเหตุร้ายกำลังเกิดขึ้นหรือมีอันตรายต่อชีวิต โทร 191 ทันที ไม่ต้องแจ้งผ่านระบบนี้</span></div>
+  </div>`;
+}
+function nearbyView(){
+  const me=S.c.me, n=STATIONS.map(s=>({s,d:km(me,s)})).sort((a,b)=>a.d-b.d)[0];
+  const mins=Math.max(3,Math.round(n.d/25*60));
+  return `<div class="cit stack fade">
+    <div class="stack" style="gap:4px"><h1>ค้นหาโรงพักใกล้คุณ</h1><p class="muted">กดปุ่ม GPS เพื่อแชร์ตำแหน่งจากมือถือ ระบบจะเรียงโรงพักจากใกล้ไปไกล ตำแหน่งใช้คำนวณบนเครื่องเท่านั้น ไม่ถูกส่งหรือเก็บไว้</p></div>
+    <div class="nearest"><span class="lbl">โรงพักที่ใกล้ที่สุดจาก "${esc(me.label)}"</span>
+      <span class="big">${esc(n.s.name)}</span>
+      <span><span class="mono">${n.d.toFixed(1)} กม.</span> <span class="muted">· ขับรถประมาณ ${mins} นาที (ประมาณจากระยะทางตรง) · ${esc(n.s.area)}</span></span>
+      <div class="row"><a class="btn primary" href="https://www.google.com/maps/dir/?api=1&destination=${n.s.lat},${n.s.lng}" target="_blank" rel="noopener">นำทางด้วย Google Maps ↗</a><button class="btn" data-act="mode" data-v="citizen">แจ้งเรื่องล่วงหน้า</button></div></div>
+    <div class="panel">${stationPicker(null,false)}</div>
+  </div>`;
+}
+
+/* ============ render ============ */
+function render(){
+  $('#m-home').hidden=S.mode==='home';
+  let html='';
+  if(S.mode==='home')html=homeView();else if(S.mode==='nearby')html=nearbyView();
+  else if(S.mode==='citizen'){const v=S.c.view;html=v==='login'?cLogin():v==='profile'?cProfile():v==='new'?cWizard():v==='case'?cCase():cHome()}
+  else{const v=S.o.view;html=v==='login'?oLogin():v==='case'?oCase():v==='appts'?oAppts():v==='reports'?oReports():oInbox()}
+  $('#app').innerHTML=html;
+  const q=$('#qr'); if(q&&window.QRCode){try{new QRCode(q,{text:q.dataset.text,width:112,height:112,colorDark:'#142032',colorLight:'#ffffff'})}catch(e){}}
+}
+function log(c,act,note,pub){c.history.push({at:Date.now(),by:off(S.o.id).name,act,note:note||'',pub:pub?1:0})}
+function curCase(){return DB.cases.find(x=>x.id===S.o.caseId)}
+
+const A={
+  mode:el=>{S.mode=el.dataset.v;try{location.hash=S.mode==='home'?'':S.mode}catch(e){}go()},
+  gps:()=>locate(),
+  hometrack:()=>{S.mode='citizen';if(!S.c.pid)S.c.view='login';try{location.hash='citizen'}catch(e){}go();setTimeout(()=>{const q=$('#trackq');if(q)q.focus()},50)},
+  /* citizen */
+  thaid:el=>{const p=THAID[+el.dataset.i];S.c.profile=p;S.c.pid=p.pid;S.c.otp=null;
+    if(DB.citizens[p.pid]&&DB.citizens[p.pid].phone){S.c.view='home';toast('เข้าสู่ระบบด้วย ThaID แล้ว')}else{S.c.view='profile'}go()},
+  otpsend:()=>{const ph=$('#pf-phone').value.replace(/\D/g,'');if(!/^0[689]\d{8}$/.test(ph))return toast('กรอกเบอร์มือถือ 10 หลัก ขึ้นต้นด้วย 06, 08 หรือ 09');
+    S.c.otp={phone:ph,email:$('#pf-email').value,contact:$('#pf-contact').value};render();toast('ส่งรหัส OTP แล้ว')},
+  otpverify:()=>{if($('#pf-otp').value.trim()!=='123456')return toast('รหัส OTP ไม่ถูกต้อง');const p=S.c.profile;
+    DB.citizens[p.pid]={pid:p.pid,prefix:p.prefix,first:p.first,last:p.last,birth:p.birth,addr:p.addr,phone:S.c.otp.phone,email:S.c.otp.email,contact:S.c.otp.contact};save();S.c.otp=null;S.c.view='home';go();toast('บันทึกข้อมูลผู้แจ้งแล้ว')},
+  profileskip:()=>{S.c.view='home';go()},
+  profilesave:()=>{const sv=DB.citizens[S.c.pid],ph=$('#pf-phone').value.replace(/\D/g,'');
+    if(ph!==sv.phone){toast('เบอร์ใหม่ต้องยืนยัน OTP ก่อน');return A.otpsend()}
+    sv.email=$('#pf-email').value;sv.contact=$('#pf-contact').value;save();S.c.view='home';go();toast('บันทึกข้อมูลผู้แจ้งแล้ว')},
+  cview:el=>{const v=el.dataset.v;if(v==='profile'){S.c.profile=THAID.find(p=>p.pid===S.c.pid);S.c.otp=null}S.c.view=v;S.c.justFiled=null;go()},
+  clogout:()=>{S.c.view='login';S.c.pid=null;go()},
+  ccase:el=>{S.c.caseId=el.dataset.id;S.c.view='case';S.c.justFiled=null;go()},
+  ccancel:()=>{const c=DB.cases.find(x=>x.id===S.c.caseId);c.status='cancelled';c.closedAt=Date.now();c.closeReason='ผู้แจ้งยกเลิกเอง';c.history.push({at:Date.now(),by:'ผู้แจ้ง',act:'ยกเลิกเรื่อง',pub:1});save();go();toast('ยกเลิกเรื่องแล้ว')},
+  track:()=>{const q=$('#trackq').value.trim().toUpperCase();S.c.trackQ=q;S.c.trackRes=DB.cases.find(c=>c.tracking===q)||false;render()},
+  newcase:()=>{S.c.wiz={step:0,d:{files:[]}};S.c.view='new';go()},
+  wemer:el=>{S.c.wiz.emergency=el.dataset.v==='1';render()},
+  wcat:el=>{S.c.wiz.d.category=el.dataset.k;render()},
+  wnext:()=>wizNext(),
+  wback:()=>{const w=S.c.wiz;if(w.step===2)readDetail();w.step=Math.max(0,w.step-1);w.emergency=false;go()},
+  wdate:el=>{S.c.wiz.d.apptDate=el.dataset.k;S.c.wiz.d.apptSlot=null;render()},
+  wslot:el=>{S.c.wiz.d.apptSlot=el.dataset.s;render()},
+  pickstn:el=>{if(S.c.view==='new'&&S.c.wiz&&S.c.wiz.step===3){S.c.wiz.d.stationId=el.dataset.id;S.c.wiz.d.apptDate=null;S.c.wiz.d.apptSlot=null;render()}},
+  preset:el=>{const p=PRESETS.find(x=>x.label===el.dataset.l);S.c.me={...p};render()},
+  /* officer */
+  ologin:el=>{S.o.id=el.dataset.id;S.o.view='inbox';go()},
+  ologout:()=>{S.o.view='login';S.o.id=null;go()},
+  reset:()=>{if(S.o.confirmReset){DB=seed();save();S.o.confirmReset=false;toast('รีเซ็ตข้อมูลตัวอย่างแล้ว');go()}else{S.o.confirmReset=true;toast('กดอีกครั้งเพื่อยืนยันการรีเซ็ต');setTimeout(()=>S.o.confirmReset=false,4000)}},
+  oview:el=>{S.o.view=el.dataset.v;S.o.csv=null;go()},
+  ofilter:el=>{S.o.f={status:el.dataset.v,level:'all',station:'all',q:''};render()},
+  ocase:el=>{S.o.caseId=el.dataset.id;S.o.view='case';S.o.showPid=false;go()},
+  showpid:()=>{const c=curCase();S.o.showPid=true;log(c,'เปิดดูเลขบัตรประชาชนของผู้แจ้ง','',0);save();render()},
+  oaccept:()=>{const c=curCase();c.status='accepted';c.acceptedAt=Date.now();log(c,'รับเรื่อง','',1);save();render();toast('รับเรื่องแล้ว')},
+  oassign:()=>{const c=curCase(),o=off($('#a-off').value);c.assignee=o.id;if(!c.acceptedAt)c.acceptedAt=Date.now();if(['new','accepted'].includes(c.status))c.status='assigned';log(c,`มอบหมายให้ ${o.name}`,'',1);save();render();toast('มอบหมายแล้ว')},
+  oconfirm:()=>{const c=curCase();c.appt.confirmed=true;log(c,`ยืนยันนัดหมาย ${fd(fromKey(c.appt.date))} เวลา ${c.appt.slot} น.`,'',1);save();render();toast('ยืนยันนัดแล้ว ระบบส่ง SMS ถึงผู้แจ้ง (จำลอง)')},
+  oresched:()=>{const c=curCase(),d=$('#a-date').value,s=$('#a-slot').value;if(!d)return toast('เลือกวันที่');c.appt={date:d,slot:s,confirmed:true};log(c,`นัดหมาย ${fd(fromKey(d))} เวลา ${s} น.`,'',1);save();render();toast('บันทึกนัดแล้ว')},
+  onoshow:()=>{const c=curCase();c.appt.noShow=true;log(c,'ผู้แจ้งไม่มาตามนัด','',1);save();render()},
+  olevel:()=>{const c=curCase(),lv=$('#a-lv').value,why=$('#a-lvwhy').value.trim();if(lv===c.level)return toast('ระดับเดิม');if(!why)return toast('ระบุเหตุผลการปรับระดับ');log(c,`ปรับระดับจาก${LV[c.level].name}เป็น${LV[lv].name}`,why,0);c.level=lv;save();render()},
+  ostatus:()=>{const c=curCase(),st=$('#a-st').value,note=$('#a-note').value.trim(),pub=$('#a-pub').checked;if(st===c.status&&!note)return toast('เลือกสถานะใหม่หรือพิมพ์บันทึก');
+    if(st!==c.status){if(st!=='new'&&!c.acceptedAt)c.acceptedAt=Date.now();c.status=st;log(c,`เปลี่ยนสถานะเป็น "${ST[st]}"`,note,pub)}else log(c,'บันทึกความคืบหน้า',note,pub);save();render();toast('บันทึกแล้ว')},
+  oclose:()=>{const c=curCase(),v=$('#a-close').value,n=$('#a-closenote').value.trim();if(v==='__ref'){if(!n)return toast('ระบุหน่วยงานที่ส่งต่อ');c.status='referred';c.closeReason='ส่งต่อ: '+n}else{c.status=v==='ผู้แจ้งขอถอนเรื่อง'?'cancelled':'closed';c.closeReason=v+(n?` (${n})`:'')}
+    c.closedAt=Date.now();if(!c.acceptedAt)c.acceptedAt=c.closedAt;log(c,`ปิดเรื่อง: ${c.closeReason}`,'',1);save();render();toast('ปิดเรื่องแล้ว')},
+  oreopen:()=>{const c=curCase();c.status='investigating';c.closedAt=null;c.closeReason=null;log(c,'เปิดเรื่องใหม่โดยหัวหน้างานสอบสวน','',1);save();render()},
+  rtype:el=>{S.o.rep.type=el.dataset.v;S.o.csv=null;render()},
+  rcsv:()=>{const R=repRange();const rows=DB.cases.filter(c=>c.createdAt>=R.a&&c.createdAt<R.b);
+    const head=['เลขติดตาม','วันที่ยื่น','ประเภท','ระดับ','สถานะ','โรงพัก','พนักงานสอบสวน','วันที่ปิด','เหตุผลปิด'];
+    const csv=[head,...rows.map(c=>[c.tracking,fdt(c.createdAt),CATS[c.category].name,LV[c.level].name,ST[c.status],stn(c.stationId).name,c.assignee?off(c.assignee).name:'',c.closedAt?fdt(c.closedAt):'',c.closeReason||''])].map(r=>r.map(x=>`"${String(x).replace(/"/g,'""')}"`).join(',')).join('\n');
+    const done=()=>toast(`คัดลอก ${rows.length} แถวแล้ว วางใน Excel ได้เลย`);
+    try{navigator.clipboard.writeText(csv).then(done,()=>{S.o.csv=csv;render()})}catch(e){S.o.csv=csv;render()}}
+};
+document.addEventListener('click',e=>{
+  const el=e.target.closest('[data-act]');
+  if(el){if(el.tagName==='BUTTON'||el.tagName==='A'&&el.dataset.act)e.preventDefault();const f=A[el.dataset.act];if(f)f(el);return}
+  const svg=e.target.closest('svg.map');
+  if(svg){const pt=svg.createSVGPoint();pt.x=e.clientX;pt.y=e.clientY;const p=pt.matrixTransform(svg.getScreenCTM().inverse());S.c.me={...unpx(p.x,p.y),label:'จุดที่เลือกบนแผนผัง'};render()}
+});
+document.addEventListener('change',e=>{
+  const k=e.target.dataset&&e.target.dataset.change;if(!k)return;const v=e.target.value,f=S.o.f,r=S.o.rep;
+  if(k==='fstatus')f.status=v;if(k==='flevel')f.level=v;if(k==='fstation')f.station=v;if(k==='fq')f.q=v;
+  if(k==='rday')r.day=v;if(k==='rm')r.m=+v;if(k==='ry')r.y=+v;S.o.csv=null;render();
+});
+document.addEventListener('keydown',e=>{if(e.key==='Enter'&&e.target.id==='trackq'){A.track()}if(e.key==='Enter'&&e.target.id==='f-q'){S.o.f.q=e.target.value;render()}});
+function fromHash(){const h=(location.hash||'').slice(1);S.mode=['officer','citizen','nearby'].includes(h)?h:'home'}
+window.addEventListener('hashchange',()=>{fromHash();render()});
+fromHash();render();
+</script>
+</body></html>
